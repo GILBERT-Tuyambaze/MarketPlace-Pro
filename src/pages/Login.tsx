@@ -12,12 +12,9 @@ import { toast } from 'sonner';
 import { ensureTestProducts } from '@/lib/seedData';
 
 const LoginPage: React.FC = () => {
-  // Default test credentials
-  const DEFAULT_TEST_EMAIL = 'test@example.com';
-  const DEFAULT_TEST_PASSWORD = 'test123456';
-
-  const [email, setEmail] = useState(DEFAULT_TEST_EMAIL);
-  const [password, setPassword] = useState(DEFAULT_TEST_PASSWORD);
+  
+  const [email, setEmail] = useState();
+  const [password, setPassword] = useState();
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -171,19 +168,6 @@ const LoginPage: React.FC = () => {
             </CardContent>
           </Card>
 
-          {/* Demo Credentials Info */}
-          <Card className="shadow-lg border-0 bg-blue-50">
-            <CardContent className="p-4">
-              <div className="text-sm">
-                <p className="font-semibold text-gray-900 mb-2">Demo Credentials for Testing:</p>
-                <div className="bg-white rounded p-3 space-y-1 text-xs font-mono">
-                  <p><span className="font-bold">Email:</span> {DEFAULT_TEST_EMAIL}</p>
-                  <p><span className="font-bold">Password:</span> {DEFAULT_TEST_PASSWORD}</p>
-                </div>
-                <p className="text-gray-600 text-xs mt-2">Sample products will be automatically added to your account on first login!</p>
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </div>
     </Layout>
