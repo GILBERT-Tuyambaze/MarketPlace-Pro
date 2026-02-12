@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -10,7 +10,7 @@ import Layout from '@/components/Layout/Layout';
 import { useAuth } from '@/context/AuthContext';
 import { storage, db } from '@/lib/firebaseClient';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { collection, addDoc, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, Timestamp, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { Plus, Upload, X } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -26,9 +26,15 @@ interface ProductFormData {
 
 const AddProduct: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user, profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const editId = searchParams.get('edit');
+  const [isEdit, setIsEdit] = useState(!!editId);
+  
   const [formData, setFormData] = useState<ProductFormData>({
     title: '',
     description: '',
@@ -51,6 +57,52 @@ const AddProduct: React.FC = () => {
 
   // Check if user has permission to add products
   const canAddProduct = profile?.role === 'seller' || profile?.role === 'admin';
+
+  // Load product if editing
+  useEffect(() => {
+    if (isEdit && editId) {
+      loadProduct(editId);
+    }
+  }, [isEdit, editId]);
+
+  const loadProduct = async (productId: string) => {
+    setPageLoading(true);
+    try {
+      const productRef = doc(db, 'products', productId);
+      const productSnap = await getDoc(productRef);
+      
+      if (!productSnap.exists()) {
+        toast.error('Product not found');
+        navigate('/seller/dashboard');
+        return;
+      }
+
+      const product = productSnap.data();
+      
+      // Check if user owns the product (or is admin)
+      if (product.seller_id !== user?.uid && profile?.role !== 'admin') {
+        toast.error('You do not have permission to edit this product');
+        navigate('/seller/dashboard');
+        return;
+      }
+
+      setFormData({
+        title: product.title || '',
+        description: product.description || '',
+        price: product.price || 0,
+        stock: product.stock || 0,
+        category: product.category || '',
+        images: product.images || [],
+        tags: product.tags || []
+      });
+    } catch (error) {
+      console.error('Error loading product:', error);
+      toast.error('Failed to load product');
+      navigate('/seller/dashboard');
+    } finally {
+      setPageLoading(false);
+    }
+  };
 
   const handleInputChange = (field: keyof ProductFormData, value: any) => {
     setFormData(prev => ({
@@ -80,30 +132,38 @@ const AddProduct: React.FC = () => {
           continue;
         }
 
-        const fileExt = file.name.split('.').pop();
-        const fileName = `product-images/${user?.uid}/${Date.now()}-${Math.random()}.${fileExt}`;
+        try {
+          const fileExt = file.name.split('.').pop();
+          const fileName = `product-images/${user?.uid}/${Date.now()}-${Math.random()}.${fileExt}`;
 
-        // Upload to Firebase Storage
-        const fileRef = ref(storage, fileName);
-        await uploadBytes(fileRef, file);
+          // Upload to Firebase Storage
+          const fileRef = ref(storage, fileName);
+          await uploadBytes(fileRef, file);
 
-        // Get download URL
-        const downloadURL = await getDownloadURL(fileRef);
-        uploadedImages.push(downloadURL);
+          // Get download URL
+          const downloadURL = await getDownloadURL(fileRef);
+          uploadedImages.push(downloadURL);
+        } catch (uploadError) {
+          console.error(`Error uploading ${file.name}:`, uploadError);
+          toast.error(`Failed to upload ${file.name}`);
+        }
       }
 
-      setFormData(prev => ({
-        ...prev,
-        images: [...prev.images, ...uploadedImages]
-      }));
-
       if (uploadedImages.length > 0) {
+        setFormData(prev => ({
+          ...prev,
+          images: [...prev.images, ...uploadedImages]
+        }));
         toast.success(`${uploadedImages.length} image(s) uploaded successfully`);
       }
     } catch (error) {
       console.error('Error uploading images:', error);
       toast.error('Failed to upload images');
     } finally {
+      // Reset the file input to allow re-selecting the same files
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       setImageUploading(false);
     }
   };
@@ -171,7 +231,6 @@ const AddProduct: React.FC = () => {
 
     try {
       const productData = {
-        seller_id: user.uid,
         title: formData.title.trim(),
         description: formData.description.trim(),
         price: formData.price,
@@ -180,18 +239,29 @@ const AddProduct: React.FC = () => {
         images: formData.images,
         tags: formData.tags,
         status: profile?.role === 'admin' ? 'approved' : 'pending',
-        created_at: Timestamp.now(),
-        updated_at: Timestamp.now(),
+        ...(isEdit ? { updated_at: Timestamp.now() } : { 
+          seller_id: user.uid,
+          created_at: Timestamp.now(),
+          updated_at: Timestamp.now(),
+        }),
       };
 
-      // Add to Firestore
-      const productRef = await addDoc(collection(db, 'products'), productData);
-
-      toast.success(
-        profile?.role === 'admin' 
-          ? 'Product added successfully!' 
-          : 'Product submitted for approval!'
-      );
+      if (isEdit && editId) {
+        // Update existing product
+        const productRef = doc(db, 'products', editId);
+        await updateDoc(productRef, productData);
+        
+        toast.success('Product updated successfully!');
+      } else {
+        // Add new product
+        await addDoc(collection(db, 'products'), productData);
+        
+        toast.success(
+          profile?.role === 'admin' 
+            ? 'Product added successfully!' 
+            : 'Product submitted for approval!'
+        );
+      }
       
       // Navigate back to dashboard
       if (profile?.role === 'admin') {
@@ -200,8 +270,8 @@ const AddProduct: React.FC = () => {
         navigate('/seller/dashboard');
       }
     } catch (error) {
-      console.error('Error adding product:', error);
-      toast.error('Failed to add product');
+      console.error('Error saving product:', error);
+      toast.error('Failed to save product');
     } finally {
       setLoading(false);
     }
@@ -224,14 +294,29 @@ const AddProduct: React.FC = () => {
     );
   }
 
+  if (pageLoading) {
+    return (
+      <Layout>
+        <div className="container mx-auto px-6 py-8">
+          <div className="max-w-2xl mx-auto text-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="text-gray-600 mt-4">Loading product...</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <Layout>
       <div className="container mx-auto px-6 py-8">
         <div className="max-w-4xl mx-auto">
           <div className="mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 mb-4">Add New Product</h1>
+            <h1 className="text-4xl font-bold text-gray-900 mb-4">
+              {isEdit ? 'Edit Product' : 'Add New Product'}
+            </h1>
             <p className="text-gray-600">
-              Create a new product listing for your store
+              {isEdit ? 'Update your product details' : 'Create a new product listing for your store'}
             </p>
           </div>
 
@@ -324,6 +409,7 @@ const AddProduct: React.FC = () => {
                       <div>
                         <Label htmlFor="images">Upload Images</Label>
                         <Input
+                          ref={fileInputRef}
                           id="images"
                           type="file"
                           multiple
@@ -424,7 +510,7 @@ const AddProduct: React.FC = () => {
                         className="w-full"
                         disabled={loading || imageUploading}
                       >
-                        {loading ? 'Adding Product...' : 'Add Product'}
+                        {loading ? (isEdit ? 'Updating...' : 'Adding...') : (isEdit ? 'Update Product' : 'Add Product')}
                       </Button>
 
                       <Button

@@ -6,7 +6,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Layout from '@/components/Layout/Layout';
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebaseClient';
-import { doc, updateDoc, serverTimestamp, deleteDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { 
+  doc, 
+  updateDoc, 
+  serverTimestamp, 
+  deleteDoc, 
+  collection, 
+  getDocs, 
+  query, 
+  where,
+  Timestamp 
+} from 'firebase/firestore';
 import { 
   Package, 
   DollarSign, 
@@ -61,14 +71,17 @@ const SellerDashboard: React.FC = () => {
     if (!user) return;
 
     try {
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .eq('seller_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setProducts(data || []);
+      const q = query(
+        collection(db, 'products'),
+        where('seller_id', '==', user.uid)
+      );
+      const querySnapshot = await getDocs(q);
+      const productsList = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        created_at: doc.data().created_at?.toDate?.()?.toISOString() || new Date().toISOString(),
+      })) as Product[];
+      setProducts(productsList);
     } catch (error) {
       console.error('Error fetching products:', error);
       toast.error('Failed to load products');
@@ -80,23 +93,27 @@ const SellerDashboard: React.FC = () => {
 
     try {
       // Fetch product stats
-      const { data: productStats } = await supabase
-        .from('products')
-        .select('status')
-        .eq('seller_id', user.id);
+      const productsQuery = query(
+        collection(db, 'products'),
+        where('seller_id', '==', user.uid)
+      );
+      const productsSnapshot = await getDocs(productsQuery);
+      const productStats = productsSnapshot.docs.map(doc => doc.data());
 
-      // Fetch sales stats
-      const { data: salesStats } = await supabase
-        .from('orders')
-        .select('total_amount, payment_status')
-        .eq('seller_id', user.id)
-        .eq('payment_status', 'completed');
+      // Fetch sales stats from orders
+      const ordersQuery = query(
+        collection(db, 'orders'),
+        where('seller_id', '==', user.uid),
+        where('payment_status', '==', 'completed')
+      );
+      const ordersSnapshot = await getDocs(ordersQuery);
+      const salesStats = ordersSnapshot.docs.map(doc => doc.data());
 
-      const totalProducts = productStats?.length || 0;
-      const activeProducts = productStats?.filter(p => p.status === 'approved').length || 0;
-      const pendingProducts = productStats?.filter(p => p.status === 'pending').length || 0;
-      const totalSales = salesStats?.length || 0;
-      const totalRevenue = salesStats?.reduce((sum, order) => sum + order.total_amount, 0) || 0;
+      const totalProducts = productStats.length;
+      const activeProducts = productStats.filter(p => p.status === 'approved').length;
+      const pendingProducts = productStats.filter(p => p.status === 'pending').length;
+      const totalSales = salesStats.length;
+      const totalRevenue = salesStats.reduce((sum, order) => sum + (order.total_amount || 0), 0);
 
       setStats({
         totalProducts,
@@ -292,13 +309,8 @@ const SellerDashboard: React.FC = () => {
                                 try {
                                   // optimistic remove
                                   setProducts(prev => prev.filter(p => p.id !== product.id));
-                                  if (supabase) {
-                                    const { error } = await supabase.from('products').delete().eq('id', product.id);
-                                    if (error) throw error;
-                                  } else {
-                                    const ref = doc(db, 'products', product.id);
-                                    await deleteDoc(ref);
-                                  }
+                                  const ref = doc(db, 'products', product.id);
+                                  await deleteDoc(ref);
                                   toast.success('Product deleted');
                                 } catch (err) {
                                   console.error('Failed to delete product', err);
