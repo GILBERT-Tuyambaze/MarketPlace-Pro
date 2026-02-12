@@ -264,16 +264,7 @@ export default function HomePage() {
   // Show landing page if not logged in
   return (
     <Layout>
-      {/* Demo Banner */}
-      <div className="bg-gradient-to-r from-yellow-400 to-orange-400 text-gray-900 py-3 px-4 text-center">
-        <p className="text-sm md:text-base font-semibold">
-          🎉 <strong>Demo Mode:</strong> Test Account - Email: <code className="bg-yellow-200 px-2 py-1 rounded">test@example.com</code> Password: <code className="bg-yellow-200 px-2 py-1 rounded">test123456</code> | 
-          Admin: <code className="bg-yellow-200 px-2 py-1 rounded">admin@example.com</code> Password: <code className="bg-yellow-200 px-2 py-1 rounded">admin123456</code> 
-          <Link to="/products" className="ml-3 underline font-bold hover:text-gray-700">→ Browse Products</Link>
-          <Link to="/seed-data" className="ml-3 underline font-bold hover:text-gray-700">🌱 Seed Data</Link>
-        </p>
-      </div>
-
+    
       {/* Hero Section */}
       <section className="relative min-h-screen flex items-center justify-center overflow-hidden bg-gradient-to-br from-slate-900 via-blue-900 to-indigo-900">
         {/* Animated Background */}
