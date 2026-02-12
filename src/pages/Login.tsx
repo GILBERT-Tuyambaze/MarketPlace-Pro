@@ -9,7 +9,6 @@ import Layout from '@/components/Layout/Layout';
 import { useAuth } from '@/context/AuthContext';
 import { Eye, EyeOff, LogIn, Package } from 'lucide-react';
 import { toast } from 'sonner';
-import { ensureTestProducts } from '@/lib/seedData';
 
 const LoginPage: React.FC = () => {
   
@@ -39,16 +38,6 @@ const LoginPage: React.FC = () => {
         toast.error(response.error?.message || 'Failed to sign in');
         setLoading(false);
         return;
-      }
-      
-      // Seed test products for the logged-in user
-      if (response.user?.id) {
-        try {
-          await ensureTestProducts(response.user.id);
-        } catch (seedError) {
-          console.error('Error seeding products:', seedError);
-          // Don't fail if seeding fails
-        }
       }
       
       toast.success('Welcome back!');

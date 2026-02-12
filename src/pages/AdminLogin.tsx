@@ -9,7 +9,6 @@ import Layout from '@/components/Layout/Layout';
 import { useAuth } from '@/context/AuthContext';
 import { Eye, EyeOff, Shield, Package } from 'lucide-react';
 import { toast } from 'sonner';
-import { ensureTestProducts } from '@/lib/seedData';
 
 const AdminLoginPage: React.FC = () => {
   // Default test credentials for admin
@@ -32,11 +31,6 @@ const AdminLoginPage: React.FC = () => {
 
     try {
       const response = await signIn(email, password);
-      
-      // Seed test products for admin
-      if (response.user?.id) {
-        await ensureTestProducts(response.user.id);
-      }
       
       // Navigation will be handled by the auth context and protected routes
       toast.success('Admin access granted');

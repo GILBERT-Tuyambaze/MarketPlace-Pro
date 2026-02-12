@@ -8,7 +8,8 @@ import { Separator } from '@/components/ui/separator';
 import Layout from '@/components/Layout/Layout';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
-import { supabase } from '@/context/AuthContext';
+import { db } from '@/lib/firebaseClient';
+import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { CreditCard, Lock, Truck } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -28,6 +29,13 @@ const CheckoutPage: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
 
+  // Check if cart is empty and redirect
+  React.useEffect(() => {
+    if (items.length === 0) {
+      navigate('/cart');
+    }
+  }, [items.length, navigate]);
+
   const handleInputChange = (field: string, value: string) => {
     setShippingInfo(prev => ({ ...prev, [field]: value }));
   };
@@ -43,25 +51,46 @@ const CheckoutPage: React.FC = () => {
     setLoading(true);
 
     try {
-      // Create checkout session with Supabase Edge Function
-      const { data, error } = await supabase.functions.invoke('create-checkout', {
-        body: {
-          items: items.map(item => ({
-            product_id: item.product_id,
-            quantity: item.quantity,
-          })),
-          successUrl: `${window.location.origin}/orders?success=true`,
-          cancelUrl: `${window.location.origin}/cart`,
-        },
-      });
-
-      if (error) throw error;
-
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        throw new Error('No checkout URL received');
+      // Validate shipping info
+      if (!shippingInfo.fullName.trim() || !shippingInfo.email.trim() || !shippingInfo.address.trim()) {
+        toast.error('Please fill in all required shipping information');
+        setLoading(false);
+        return;
       }
+
+      if (!user) {
+        toast.error('You must be logged in to checkout');
+        setLoading(false);
+        return;
+      }
+
+      // Create order in Firestore
+      const orderData = {
+        user_id: user.uid,
+        items: items.map(item => ({
+          product_id: item.product_id,
+          quantity: item.quantity,
+          price: item.product.price,
+        })),
+        shippingInfo,
+        totalAmount: getTotalPrice(),
+        status: 'pending',
+        paymentStatus: 'pending',
+        created_at: Timestamp.now(),
+        updated_at: Timestamp.now(),
+      };
+
+      const orderRef = await addDoc(collection(db, 'orders'), orderData);
+
+      // Clear cart
+      await clearCart();
+
+      toast.success('Order placed successfully! Your order ID: ' + orderRef.id);
+      
+      // Navigate to orders page after short delay
+      setTimeout(() => {
+        navigate('/orders');
+      }, 1500);
     } catch (error) {
       console.error('Checkout error:', error);
       toast.error('Failed to process checkout. Please try again.');
@@ -70,8 +99,8 @@ const CheckoutPage: React.FC = () => {
     }
   };
 
+  // Skip rendering if cart is empty (effect will handle redirect)
   if (items.length === 0) {
-    navigate('/cart');
     return null;
   }
 

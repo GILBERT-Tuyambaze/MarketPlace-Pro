@@ -5,7 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Layout from '@/components/Layout/Layout';
 import { useAuth } from '@/context/AuthContext';
-import { supabase } from '@/context/AuthContext';
+import { db } from '@/lib/firebaseClient';
+import { doc, updateDoc, serverTimestamp, deleteDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { 
   Package, 
   DollarSign, 
@@ -295,9 +296,8 @@ const SellerDashboard: React.FC = () => {
                                     const { error } = await supabase.from('products').delete().eq('id', product.id);
                                     if (error) throw error;
                                   } else {
-                                    const ref = fbDoc(firebaseDb, 'products', product.id);
-                                    await fbUpdateDoc(ref, { deleted_at: fbServerTimestamp() });
-                                    // or use deleteDoc(ref) to hard-delete
+                                    const ref = doc(db, 'products', product.id);
+                                    await deleteDoc(ref);
                                   }
                                   toast.success('Product deleted');
                                 } catch (err) {

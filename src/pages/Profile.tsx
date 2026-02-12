@@ -185,8 +185,8 @@ const ProfilePage: React.FC = () => {
                     <div>
                       <Label className="text-sm text-gray-600">Member Since</Label>
                       <p className="text-sm font-medium">
-                        {user?.created_at ? 
-                          new Date(user.created_at).toLocaleDateString('en-US', {
+                        {profile?.created_at ? 
+                           profile.created_at.toDate().toLocaleDateString('en-US', {
                             year: 'numeric',
                             month: 'long',
                             day: 'numeric',

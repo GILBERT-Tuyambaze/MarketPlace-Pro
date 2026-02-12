@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import Layout from '@/components/Layout/Layout';
 import { useAuth } from '@/context/AuthContext';
-import { supabase } from '@/context/AuthContext';
 import { 
   ShoppingBag, 
   Users, 

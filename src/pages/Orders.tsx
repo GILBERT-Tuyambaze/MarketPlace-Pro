@@ -6,28 +6,37 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Layout from '@/components/Layout/Layout';
 import { useAuth } from '@/context/AuthContext';
-import { supabase } from '@/context/AuthContext';
+import { db } from '@/lib/firebaseClient';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { Package, Eye, Clock, CheckCircle, XCircle, Truck } from 'lucide-react';
 import { toast } from 'sonner';
 
+interface OrderItem {
+  product_id: string;
+  quantity: number;
+  price: number;
+}
+
+interface ShippingInfo {
+  fullName: string;
+  email: string;
+  address: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  country: string;
+}
+
 interface Order {
   id: string;
-  quantity: number;
-  unit_price: number;
-  total_amount: number;
-  payment_status: string;
-  order_status: string;
-  shipping_address?: string;
-  tracking_number?: string;
-  created_at: string;
-  product: {
-    id: string;
-    title: string;
-    images?: string[];
-  };
-  seller: {
-    full_name: string;
-  };
+  user_id: string;
+  items: OrderItem[];
+  shippingInfo: ShippingInfo;
+  totalAmount: number;
+  status: string;
+  paymentStatus: string;
+  created_at: any;
+  updated_at: any;
 }
 
 const OrdersPage: React.FC = () => {
@@ -47,38 +56,39 @@ const OrdersPage: React.FC = () => {
 
     setLoading(true);
     try {
-      let query = supabase
-        .from('orders')
-        .select(`
-          *,
-          product:products(id, title, images),
-          seller:profiles!orders_seller_id_fkey(full_name)
-        `);
+      const ordersRef = collection(db, 'orders');
+      
+      // Query orders for current user (using user_id field from checkout)
+      const q = query(
+        ordersRef,
+        where('user_id', '==', user.uid)
+      );
 
-      // Filter based on user role
-      if (profile?.role === 'seller') {
-        query = query.eq('seller_id', user.id);
-      } else {
-        query = query.eq('buyer_id', user.id);
-      }
+      const querySnapshot = await getDocs(q);
+      let fetchedOrders = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Order[];
+      
+      // Sort client-side to avoid composite index (newest first)
+      fetchedOrders.sort((a, b) => {
+        const aTime = a.created_at?.toMillis?.() || 0;
+        const bTime = b.created_at?.toMillis?.() || 0;
+        return bTime - aTime;
+      });
 
       // Apply status filter
       if (activeTab !== 'all') {
         if (activeTab === 'pending') {
-          query = query.in('order_status', ['processing']);
+          fetchedOrders = fetchedOrders.filter(order => order.status === 'pending');
         } else if (activeTab === 'shipped') {
-          query = query.eq('order_status', 'shipped');
+          fetchedOrders = fetchedOrders.filter(order => order.status === 'shipped');
         } else if (activeTab === 'delivered') {
-          query = query.eq('order_status', 'delivered');
+          fetchedOrders = fetchedOrders.filter(order => order.status === 'delivered');
         }
       }
 
-      query = query.order('created_at', { ascending: false });
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      setOrders(data || []);
+      setOrders(fetchedOrders);
     } catch (error) {
       console.error('Error fetching orders:', error);
       toast.error('Failed to load orders');
@@ -192,87 +202,64 @@ const OrdersPage: React.FC = () => {
                 {orders.map((order) => (
                   <Card key={order.id} className="hover:shadow-md transition-shadow">
                     <CardContent className="p-6">
-                      <div className="flex flex-col md:flex-row md:items-center gap-6">
-                        {/* Product Image */}
-                        <div className="w-20 h-20 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
-                          {order.product.images && order.product.images.length > 0 ? (
-                            <img 
-                              src={order.product.images[0]} 
-                              alt={order.product.title}
-                              className="w-full h-full object-cover rounded-lg"
-                            />
-                          ) : (
-                            <Package className="h-8 w-8 text-gray-400" />
-                          )}
-                        </div>
-
-                        {/* Order Details */}
-                        <div className="flex-1 space-y-2">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <h3 className="font-semibold text-gray-900 text-lg">
-                                <Link 
-                                  to={`/products/${order.product.id}`}
-                                  className="hover:text-blue-600 transition-colors"
-                                >
-                                  {order.product.title}
-                                </Link>
-                              </h3>
-                              <p className="text-sm text-gray-600">
-                                {profile?.role === 'seller' 
-                                  ? `Ordered by customer`
-                                  : `Sold by ${order.seller.full_name}`
-                                }
-                              </p>
-                              <p className="text-sm text-gray-500">
-                                Order placed on {formatDate(order.created_at)}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <div className="text-lg font-semibold text-gray-900">
-                                {formatPrice(order.total_amount)}
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                Qty: {order.quantity}
-                              </div>
-                            </div>
+                      {/* Order Summary */}
+                      <div className="mb-6">
+                        <div className="flex items-center justify-between mb-4">
+                          <div>
+                            <p className="text-sm text-gray-600">Order ID: <code className="bg-gray-100 px-2 py-1 rounded">{order.id}</code></p>
+                            <p className="text-sm text-gray-500 mt-1">
+                              Placed on {new Date(order.created_at?.toMillis?.() || order.created_at).toLocaleDateString('en-US', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </p>
                           </div>
-
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-4">
-                              <Badge className={`${getStatusColor(order.order_status)} flex items-center`}>
-                                {getStatusIcon(order.order_status)}
-                                <span className="ml-1 capitalize">{order.order_status}</span>
-                              </Badge>
-                              
-                              {order.payment_status === 'completed' && (
-                                <Badge variant="outline" className="text-green-600 border-green-600">
-                                  <CheckCircle className="h-3 w-3 mr-1" />
-                                  Paid
-                                </Badge>
-                              )}
-
-                              {order.tracking_number && (
-                                <span className="text-sm text-gray-600">
-                                  Tracking: <code className="bg-gray-100 px-1 rounded">{order.tracking_number}</code>
-                                </span>
-                              )}
+                          <div className="text-right">
+                            <div className="text-2xl font-bold text-gray-900">
+                              {formatPrice(order.totalAmount)}
                             </div>
-
-                            <div className="flex items-center space-x-2">
-                              <Button variant="outline" size="sm">
-                                <Eye className="h-4 w-4 mr-1" />
-                                View Details
-                              </Button>
-                              
-                              {profile?.role === 'seller' && order.order_status === 'processing' && (
-                                <Button size="sm">
-                                  Mark as Shipped
-                                </Button>
-                              )}
-                            </div>
+                            <Badge className={`${getStatusColor(order.status)} flex items-center justify-center mt-2`}>
+                              {getStatusIcon(order.status)}
+                              <span className="ml-1 capitalize">{order.status}</span>
+                            </Badge>
                           </div>
                         </div>
+                      </div>
+
+                      {/* Shipping Info */}
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                        <p className="text-sm font-medium text-blue-900 mb-2">Shipping Address</p>
+                        <p className="text-sm text-gray-700">{order.shippingInfo.fullName}</p>
+                        <p className="text-sm text-gray-700">{order.shippingInfo.address}</p>
+                        <p className="text-sm text-gray-700">{order.shippingInfo.city}, {order.shippingInfo.state} {order.shippingInfo.zipCode}</p>
+                        <p className="text-sm text-gray-600 mt-2">{order.shippingInfo.email}</p>
+                      </div>
+
+                      {/* Order Items */}
+                      <div className="border-t pt-4">
+                        <p className="font-medium text-gray-900 mb-3">Items ({order.items.length})</p>
+                        <div className="space-y-2">
+                          {order.items.map((item, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                              <div>
+                                <p className="text-sm font-medium">{item.product_id}</p>
+                                <p className="text-xs text-gray-500">Quantity: {item.quantity}</p>
+                              </div>
+                              <p className="font-medium">{formatPrice(item.price * item.quantity)}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center justify-end gap-2 mt-6">
+                        <Button variant="outline" size="sm">
+                          <Eye className="h-4 w-4 mr-1" />
+                          View Full Details
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>

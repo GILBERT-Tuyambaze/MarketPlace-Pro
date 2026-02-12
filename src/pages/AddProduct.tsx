@@ -8,7 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import Layout from '@/components/Layout/Layout';
 import { useAuth } from '@/context/AuthContext';
-import { supabase } from '@/context/AuthContext';
+import { storage, db } from '@/lib/firebaseClient';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { Plus, Upload, X } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -79,24 +81,15 @@ const AddProduct: React.FC = () => {
         }
 
         const fileExt = file.name.split('.').pop();
-        const fileName = `${user?.id}/${Date.now()}-${Math.random()}.${fileExt}`;
+        const fileName = `product-images/${user?.uid}/${Date.now()}-${Math.random()}.${fileExt}`;
 
-        const { data, error } = await supabase.storage
-          .from('product-images')
-          .upload(fileName, file);
+        // Upload to Firebase Storage
+        const fileRef = ref(storage, fileName);
+        await uploadBytes(fileRef, file);
 
-        if (error) {
-          console.error('Error uploading image:', error);
-          toast.error(`Failed to upload ${file.name}`);
-          continue;
-        }
-
-        // Get public URL
-        const { data: { publicUrl } } = supabase.storage
-          .from('product-images')
-          .getPublicUrl(fileName);
-
-        uploadedImages.push(publicUrl);
+        // Get download URL
+        const downloadURL = await getDownloadURL(fileRef);
+        uploadedImages.push(downloadURL);
       }
 
       setFormData(prev => ({
@@ -177,23 +170,22 @@ const AddProduct: React.FC = () => {
     setLoading(true);
 
     try {
-      const { data, error } = await supabase
-        .from('products')
-        .insert({
-          seller_id: user.id,
-          title: formData.title.trim(),
-          description: formData.description.trim(),
-          price: formData.price,
-          stock: formData.stock,
-          category: formData.category,
-          images: formData.images,
-          tags: formData.tags,
-          status: profile?.role === 'admin' ? 'approved' : 'pending' // Admin products auto-approved
-        })
-        .select()
-        .single();
+      const productData = {
+        seller_id: user.uid,
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        price: formData.price,
+        stock: formData.stock,
+        category: formData.category,
+        images: formData.images,
+        tags: formData.tags,
+        status: profile?.role === 'admin' ? 'approved' : 'pending',
+        created_at: Timestamp.now(),
+        updated_at: Timestamp.now(),
+      };
 
-      if (error) throw error;
+      // Add to Firestore
+      const productRef = await addDoc(collection(db, 'products'), productData);
 
       toast.success(
         profile?.role === 'admin' 

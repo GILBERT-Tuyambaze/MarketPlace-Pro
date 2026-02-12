@@ -8,7 +8,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import Layout from '@/components/Layout/Layout';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
-import { getMockProductById } from '@/lib/mockProducts';
+import { fetchProductById } from '@/lib/firebaseProducts';
+import type { FirebaseProduct } from '@/lib/firebaseProducts';
 import { 
   ArrowLeft, 
   ShoppingCart, 
@@ -24,59 +25,30 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-interface Product {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  stock: number;
-  category: string;
-  image: string;
-  seller_id: string;
-  seller_name: string;
-  rating: number;
-  reviews_count: number;
-}
-
 const ProductDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [product, setProduct] = useState<Product | null>(null);
+  const [product, setProduct] = useState<FirebaseProduct | null>(null);
   const [loading, setLoading] = useState(true);
   const [quantity, setQuantity] = useState(1);
   const [selectedImage, setSelectedImage] = useState(0);
-  const { addToCart } = useCart();
+  const { addToCart, isInCart, getCartItemQuantity } = useCart();
   const { user } = useAuth();
 
  
 
   const fetchProduct = useCallback(async () => {
     try {
-      const mockProduct = getMockProductById(id || '');
+      const fbProduct = await fetchProductById(id || '');
       
-      if (!mockProduct) {
+      if (!fbProduct) {
         toast.error('Product not found');
         navigate('/products');
         setLoading(false);
         return;
       }
 
-      // Transform mock product to Product interface
-      const product: Product = {
-        id: mockProduct.id,
-        name: mockProduct.name,
-        description: mockProduct.description,
-        price: mockProduct.price,
-        stock: mockProduct.stock,
-        category: mockProduct.category,
-        image: mockProduct.image,
-        seller_id: mockProduct.seller_id,
-        seller_name: mockProduct.seller_name,
-        rating: mockProduct.rating,
-        reviews_count: mockProduct.reviews_count,
-      };
-
-      setProduct(product);
+      setProduct(fbProduct);
     } catch (error) {
       console.error('Error fetching product:', error);
       toast.error('Failed to load product');
@@ -185,7 +157,7 @@ const ProductDetailPage: React.FC = () => {
                 src={product.image}
                 alt={product.name}
                 className="w-full h-full object-cover"
-                onerror="this.style.display='none'"
+                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
               />
             </div>
           </div>
@@ -281,12 +253,27 @@ const ProductDetailPage: React.FC = () => {
             <div className="space-y-3">
               <Button
                 size="lg"
-                className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
-                onClick={handleAddToCart}
+                className={`w-full ${
+                  isInCart(id!)
+                    ? 'bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700'
+                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
+                }`}
+                onClick={() => {
+                  if (isInCart(id!)) {
+                    navigate('/cart');
+                  } else {
+                    handleAddToCart();
+                  }
+                }}
                 disabled={product.stock === 0}
               >
                 <ShoppingCart className="h-5 w-5 mr-2" />
-                {product.stock > 0 ? 'Add to Cart' : 'Out of Stock'}
+                {product.stock === 0 
+                  ? 'Out of Stock' 
+                  : isInCart(id!)
+                  ? `In Cart (${getCartItemQuantity(id!)})`
+                  : 'Add to Cart'
+                }
               </Button>
 
               <div className="flex gap-3">

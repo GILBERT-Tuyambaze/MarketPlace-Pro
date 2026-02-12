@@ -10,7 +10,6 @@ import Layout from '@/components/Layout/Layout';
 import { useAuth } from '@/context/AuthContext';
 import { Eye, EyeOff, UserPlus, Package } from 'lucide-react';
 import { toast } from 'sonner';
-import { ensureTestProducts } from '@/lib/seedData';
 
 const RegisterPage: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -53,12 +52,7 @@ const RegisterPage: React.FC = () => {
     try {
       const response = await signUp(formData.email, formData.password, formData.fullName);
       
-      // Seed test products for the new user
-      if (response.user?.id) {
-        await ensureTestProducts(response.user.id);
-      }
-      
-      toast.success('Account created successfully! Sample products added to your account.');
+      toast.success('Account created successfully!');
       navigate('/login');
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : 'Failed to create account');

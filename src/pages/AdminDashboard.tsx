@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import Layout from '@/components/Layout/Layout';
-import { useAuth, supabase } from '@/context/AuthContext';
+import { useAuth } from '@/context/AuthContext';
 import { db as firebaseDb } from '@/lib/firebaseClient';
 import {
   collection,
@@ -177,99 +177,14 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const fetchUsers = async () => {
-    try {
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('id, full_name, role, seller_status, created_at, email')
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        setUsers(data || []);
-      } else {
-        // Firestore path
-        const q = query(collection(firebaseDb, 'profiles'), orderBy('created_at', 'desc'));
-        const snap = await getDocs(q);
-        const list: User[] = snap.docs.map(d => ({
-          id: d.id,
-          full_name: d.data().full_name || 'User',
-          role: d.data().role || 'customer',
-          seller_status: d.data().seller_status || 'pending',
-          created_at: d.data().created_at ? d.data().created_at.toDate().toISOString() : new Date().toISOString(),
-          email: d.data().email || ''
-        }));
-        setUsers(list);
-      }
-    } catch (error) {
-      console.error('Error fetching users:', error);
-      toast.error('Failed to load users');
-    }
-  };
-
-  const fetchProducts = async () => {
-    try {
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('products')
-          .select(`
-            *,
-            profiles(full_name)
-          `)
-          .order('created_at', { ascending: false });
-
-        if (error) throw error;
-        setProducts(data || []);
-      } else {
-        // Firestore path: fetch products and map seller name
-        const q = query(collection(firebaseDb, 'products'), orderBy('created_at', 'desc'));
-        const snap = await getDocs(q);
-        const list: Product[] = [];
-        for (const d of snap.docs) {
-          const pdata: any = d.data();
-          let sellerName = 'Unknown Seller';
-          if (pdata.seller_id) {
-            const sellerRef = fbDoc(firebaseDb, 'profiles', pdata.seller_id);
-            const sellerSnap = await fbGetDoc(sellerRef);
-            if (sellerSnap.exists()) sellerName = sellerSnap.data().full_name || sellerName;
-          }
-          list.push({
-            id: d.id,
-            title: pdata.title || pdata.name || 'Product',
-            price: pdata.price || 0,
-            status: pdata.status || 'pending',
-            category: pdata.category || 'uncategorized',
-            created_at: pdata.created_at ? pdata.created_at.toDate().toISOString() : new Date().toISOString(),
-            profiles: { full_name: sellerName }
-          });
-        }
-        setProducts(list);
-      }
-    } catch (error) {
-      console.error('Error fetching products:', error);
-      toast.error('Failed to load products');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const updateUserRole = async (userId: string, newRole: string) => {
     const prev = [...users];
     try {
       // optimistic UI update
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
 
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .update({ role: newRole })
-          .eq('id', userId);
-
-        if (error) throw error;
-      } else {
-        const ref = fbDoc(firebaseDb, 'profiles', userId);
-        await fbUpdateDoc(ref, { role: newRole, updated_at: fbServerTimestamp() });
-      }
+      const ref = fbDoc(firebaseDb, 'profiles', userId);
+      await fbUpdateDoc(ref, { role: newRole, updated_at: fbServerTimestamp() });
 
       toast.success('User role updated successfully');
       // realtime listener will update
@@ -287,17 +202,8 @@ const AdminDashboard: React.FC = () => {
       // optimistic UI update
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, seller_status: status } : u));
 
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .update({ seller_status: status })
-          .eq('id', userId);
-
-        if (error) throw error;
-      } else {
-        const ref = fbDoc(firebaseDb, 'profiles', userId);
-        await fbUpdateDoc(ref, { seller_status: status, updated_at: fbServerTimestamp() });
-      }
+      const ref = fbDoc(firebaseDb, 'profiles', userId);
+      await fbUpdateDoc(ref, { seller_status: status, updated_at: fbServerTimestamp() });
 
       toast.success(`Seller ${status} successfully`);
       // realtime listener will reflect changes
@@ -313,17 +219,9 @@ const AdminDashboard: React.FC = () => {
     try {
       // optimistic UI update
       setProducts(prev => prev.map(p => p.id === productId ? { ...p, status } : p));
-      if (supabase) {
-        const { error } = await supabase
-          .from('products')
-          .update({ status })
-          .eq('id', productId);
-
-        if (error) throw error;
-      } else {
-        const ref = fbDoc(firebaseDb, 'products', productId);
-        await fbUpdateDoc(ref, { status, updated_at: fbServerTimestamp() });
-      }
+      
+      const ref = fbDoc(firebaseDb, 'products', productId);
+      await fbUpdateDoc(ref, { status, updated_at: fbServerTimestamp() });
 
       toast.success(`Product ${status} successfully`);
       // realtime listener will reflect changes

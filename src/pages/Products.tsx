@@ -9,97 +9,83 @@ import Layout from '@/components/Layout/Layout';
 import { Search, Filter, Grid, List, Star, ShoppingCart } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { toast } from 'sonner';
-import { MOCK_PRODUCTS, searchMockProducts, getMockCategories } from '@/lib/mockProducts';
-
-interface Product {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  stock: number;
-  category: string;
-  image: string;
-  seller_id: string;
-  seller_name: string;
-  rating: number;
-  reviews_count: number;
-}
+import { fetchProducts, getProductCategories } from '@/lib/firebaseProducts';
+import type { FirebaseProduct } from '@/lib/firebaseProducts';
 
 const ProductsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [products, setProducts] = useState<Product[]>([]);
+  const [products, setProducts] = useState<FirebaseProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [category, setCategory] = useState(searchParams.get('category') || '');
   const [sortBy, setSortBy] = useState('created_at');
   const [priceRange, setPriceRange] = useState('all');
-  const { addToCart } = useCart();
+  const [categories, setCategories] = useState<string[]>([]);
+  const { addToCart, isInCart, getCartItemQuantity } = useCart();
 
-  const categories = getMockCategories();
+  // Load categories
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const cats = await getProductCategories();
+        setCategories(cats);
+      } catch (error) {
+        console.error('Error loading categories:', error);
+      }
+    };
+    loadCategories();
+  }, []);
 
-  const fetchProducts = useCallback(async () => {
-  setLoading(true);
-  try {
-    // Use mock products instead of fetching from Supabase
-    let filtered = searchMockProducts(
-      searchQuery || undefined,
-      category || undefined
-    );
+  const loadProducts = useCallback(async () => {
+    setLoading(true);
+    try {
+      // Fetch products from Firebase
+      let filtered = await fetchProducts(
+        searchQuery || undefined,
+        category || undefined,
+        'created_at',
+        200
+      );
 
-    // Apply price range filter
-    if (priceRange !== 'all') {
-      const [min, max] = priceRange.split('-').map(Number);
-      filtered = filtered.filter(p => {
-        if (max) {
-          return p.price >= min && p.price <= max;
-        } else {
-          return p.price >= min;
-        }
+      // Apply price range filter
+      if (priceRange !== 'all') {
+        const [min, max] = priceRange.split('-').map(Number);
+        filtered = filtered.filter(p => {
+          if (max) {
+            return p.price >= min && p.price <= max;
+          } else {
+            return p.price >= min;
+          }
+        });
+      }
+
+      // Apply sorting
+      const sortField = sortBy.includes('price') ? 'price' : 'created_at';
+      const sortDir = sortBy.includes('desc') ? 'desc' : 'asc';
+      filtered.sort((a, b) => {
+        let aVal = (a as any)[sortField];
+        let bVal = (b as any)[sortField];
+        
+        if (aVal < bVal) return sortDir === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortDir === 'asc' ? 1 : -1;
+        return 0;
       });
+
+      console.log('Firebase products loaded:', filtered.length, 'items');
+      setProducts(filtered);
+    } catch (error: any) {
+      console.error('Error loading products:', error);
+      toast.error('Failed to load products');
+      setProducts([]);
+    } finally {
+      setLoading(false);
     }
-
-    // Apply sorting
-    const [field, direction] = sortBy.split('-');
-    filtered.sort((a, b) => {
-      let aVal = (a as any)[field];
-      let bVal = (b as any)[field];
-      
-      if (aVal < bVal) return direction === 'asc' ? -1 : 1;
-      if (aVal > bVal) return direction === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-    // Transform mock products to Product interface
-    const transformedData = filtered.map((product: any) => ({
-      id: product.id,
-      name: product.name,
-      description: product.description,
-      price: product.price,
-      stock: product.stock,
-      category: product.category,
-      image: product.image,
-      seller_id: product.seller_id,
-      seller_name: product.seller_name,
-      rating: product.rating,
-      reviews_count: product.reviews_count,
-    }));
-
-    console.log('Mock products loaded:', transformedData.length, 'items');
-    setProducts(transformedData);
-  } catch (error: any) {
-    console.error('Error loading products:', error);
-    toast.error('Failed to load products');
-    setProducts([]);
-  } finally {
-    setLoading(false);
-  }
-}, [searchQuery, category, priceRange, sortBy]);
-
+  }, [searchQuery, category, priceRange, sortBy]);
 
   useEffect(() => {
-  fetchProducts();
-}, [fetchProducts]); 
+    loadProducts();
+  }, [loadProducts]); 
 
 
   const handleSearch = (e: React.FormEvent) => {
@@ -264,7 +250,7 @@ const ProductsPage: React.FC = () => {
                           src={product.image} 
                           alt={product.name}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          onerror="this.style.display='none'"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                         />
                       </div>
                       <div className="absolute top-2 right-2">
@@ -300,9 +286,17 @@ const ProductsPage: React.FC = () => {
                           size="sm" 
                           onClick={() => handleAddToCart(product.id)}
                           disabled={product.stock === 0}
+                          className={
+                            isInCart(product.id)
+                              ? 'bg-green-600 hover:bg-green-700'
+                              : ''
+                          }
                         >
                           <ShoppingCart className="h-4 w-4 mr-1" />
-                          Add to Cart
+                          {isInCart(product.id) 
+                            ? `In Cart (${getCartItemQuantity(product.id)})` 
+                            : 'Add to Cart'
+                          }
                         </Button>
                       </div>
                     </CardContent>
@@ -315,7 +309,7 @@ const ProductsPage: React.FC = () => {
                           src={product.image} 
                           alt={product.name}
                           className="w-full h-full object-cover rounded-lg"
-                          onerror="this.style.display='none'"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                         />
                       </div>
                       <div className="flex-1">
@@ -346,9 +340,17 @@ const ProductsPage: React.FC = () => {
                             size="sm" 
                             onClick={() => handleAddToCart(product.id)}
                             disabled={product.stock === 0}
+                            className={
+                              isInCart(product.id)
+                                ? 'bg-green-600 hover:bg-green-700'
+                                : ''
+                            }
                           >
                             <ShoppingCart className="h-4 w-4 mr-1" />
-                            Add to Cart
+                            {isInCart(product.id) 
+                              ? `In Cart (${getCartItemQuantity(product.id)})` 
+                              : 'Add to Cart'
+                            }
                           </Button>
                         </div>
                       </div>
