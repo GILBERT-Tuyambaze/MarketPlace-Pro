@@ -1,0 +1,25 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "react": ["./react-shim"],
+      "react-dom": ["./react-dom-shim"],
+      "react/client": ["./react-client-shim"]
+    },
+    "typeRoots": ["./node_modules/@types", "./"],
+    "noImplicitAny": false,
+    "noUnusedParameters": false,
+    "skipLibCheck": true,
+    "allowJs": true,
+    "noUnusedLocals": false,
+    "strictNullChecks": false
+  },
+  "include": ["src", "react-shim.d.ts"]
+}
+

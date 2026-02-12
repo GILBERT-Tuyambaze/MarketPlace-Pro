@@ -1,0 +1,367 @@
+import React, { useState, useEffect, useCallback } from "react";
+import { useSearchParams, Link } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import Layout from '@/components/Layout/Layout';
+import { Search, Filter, Grid, List, Star, ShoppingCart } from 'lucide-react';
+import { useCart } from '@/context/CartContext';
+import { toast } from 'sonner';
+import { MOCK_PRODUCTS, searchMockProducts, getMockCategories } from '@/lib/mockProducts';
+
+interface Product {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  stock: number;
+  category: string;
+  image: string;
+  seller_id: string;
+  seller_name: string;
+  rating: number;
+  reviews_count: number;
+}
+
+const ProductsPage: React.FC = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
+  const [category, setCategory] = useState(searchParams.get('category') || '');
+  const [sortBy, setSortBy] = useState('created_at');
+  const [priceRange, setPriceRange] = useState('all');
+  const { addToCart } = useCart();
+
+  const categories = getMockCategories();
+
+  const fetchProducts = useCallback(async () => {
+  setLoading(true);
+  try {
+    // Use mock products instead of fetching from Supabase
+    let filtered = searchMockProducts(
+      searchQuery || undefined,
+      category || undefined
+    );
+
+    // Apply price range filter
+    if (priceRange !== 'all') {
+      const [min, max] = priceRange.split('-').map(Number);
+      filtered = filtered.filter(p => {
+        if (max) {
+          return p.price >= min && p.price <= max;
+        } else {
+          return p.price >= min;
+        }
+      });
+    }
+
+    // Apply sorting
+    const [field, direction] = sortBy.split('-');
+    filtered.sort((a, b) => {
+      let aVal = (a as any)[field];
+      let bVal = (b as any)[field];
+      
+      if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    // Transform mock products to Product interface
+    const transformedData = filtered.map((product: any) => ({
+      id: product.id,
+      name: product.name,
+      description: product.description,
+      price: product.price,
+      stock: product.stock,
+      category: product.category,
+      image: product.image,
+      seller_id: product.seller_id,
+      seller_name: product.seller_name,
+      rating: product.rating,
+      reviews_count: product.reviews_count,
+    }));
+
+    console.log('Mock products loaded:', transformedData.length, 'items');
+    setProducts(transformedData);
+  } catch (error: any) {
+    console.error('Error loading products:', error);
+    toast.error('Failed to load products');
+    setProducts([]);
+  } finally {
+    setLoading(false);
+  }
+}, [searchQuery, category, priceRange, sortBy]);
+
+
+  useEffect(() => {
+  fetchProducts();
+}, [fetchProducts]); 
+
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const params = new URLSearchParams(searchParams);
+    if (searchQuery) {
+      
+      params.set('search', searchQuery);
+    } else {
+      params.delete('search');
+    }
+    setSearchParams(params);
+  };
+
+  const handleAddToCart = async (productId: string) => {
+    try {
+      await addToCart(productId);
+      toast.success('Added to cart!');
+    } catch (error) {
+      toast.error('Failed to add to cart. Please login first.');
+    }
+  };
+
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(price);
+  };
+
+  return (
+    <Layout>
+      <div className="container mx-auto px-6 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">Products</h1>
+          <p className="text-lg text-gray-600">
+            Discover amazing products from verified sellers worldwide
+          </p>
+        </div>
+
+        {/* Filters */}
+        <div className="bg-white rounded-lg shadow-sm border p-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+            {/* Search */}
+            <form onSubmit={handleSearch} className="relative">
+              <Input
+                type="text"
+                placeholder="Search products..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+            </form>
+
+             {/* Category Filter */}
+             <Select
+                value={category || "all"}
+                onValueChange={(val) => setCategory(val === "all" ? "" : val)}
+              >
+                <SelectTrigger>
+                   <SelectValue placeholder="All Categories" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat} value={cat}>
+                        {cat.charAt(0).toUpperCase() + cat.slice(1).replace("-", " & ")}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+            </Select>
+
+
+            {/* Price Range */}
+            <Select value={priceRange} onValueChange={setPriceRange}>
+              <SelectTrigger>
+                <SelectValue placeholder="Price Range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Prices</SelectItem>
+                <SelectItem value="0-25">$0 - $25</SelectItem>
+                <SelectItem value="25-50">$25 - $50</SelectItem>
+                <SelectItem value="50-100">$50 - $100</SelectItem>
+                <SelectItem value="100-500">$100 - $500</SelectItem>
+                <SelectItem value="500">$500+</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Sort By */}
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger>
+                <SelectValue placeholder="Sort By" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="created_at-desc">Newest First</SelectItem>
+                <SelectItem value="created_at-asc">Oldest First</SelectItem>
+                <SelectItem value="price-asc">Price: Low to High</SelectItem>
+                <SelectItem value="price-desc">Price: High to Low</SelectItem>
+                <SelectItem value="title-asc">Name: A to Z</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* View Mode Toggle */}
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-gray-600">
+              {products.length} products found
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant={viewMode === 'grid' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setViewMode('grid')}
+              >
+                <Grid className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={viewMode === 'list' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setViewMode('list')}
+              >
+                <List className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Products Grid/List */}
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {[...Array(8)].map((_, i) => (
+              <Card key={i} className="animate-pulse">
+                <div className="h-48 bg-gray-200 rounded-t-lg"></div>
+                <CardContent className="p-4">
+                  <div className="h-4 bg-gray-200 rounded mb-2"></div>
+                  <div className="h-4 bg-gray-200 rounded w-2/3 mb-2"></div>
+                  <div className="h-6 bg-gray-200 rounded w-1/3"></div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : products.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="text-gray-400 text-6xl mb-4">🔍</div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">No products found</h3>
+            <p className="text-gray-600">Try adjusting your search filters</p>
+          </div>
+        ) : (
+          <div className={viewMode === 'grid' ? 
+            'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6' : 
+            'space-y-4'
+          }>
+            {products.map((product) => (
+              <Card key={product.id} className="group hover:shadow-lg transition-all duration-300">
+                {viewMode === 'grid' ? (
+                  <>
+                    <div className="relative overflow-hidden rounded-t-lg">
+                      <div className="h-48 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
+                        <img 
+                          src={product.image} 
+                          alt={product.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          onerror="this.style.display='none'"
+                        />
+                      </div>
+                      <div className="absolute top-2 right-2">
+                        <Badge variant="secondary" className="bg-white/90">
+                          {product.category}
+                        </Badge>
+                      </div>
+                    </div>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between mb-2">
+                        <h3 className="font-semibold text-gray-900 line-clamp-2 group-hover:text-blue-600 transition-colors">
+                          <Link to={`/products/${product.id}`}>
+                            {product.name}
+                          </Link>
+                        </h3>
+                      </div>
+                      <p className="text-sm text-gray-600 mb-3 line-clamp-2">
+                        {product.description}
+                      </p>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-lg font-bold text-blue-600">
+                          {formatPrice(product.price)}
+                        </span>
+                        <span className="text-sm text-gray-500">
+                          Stock: {product.stock}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-500">
+                          by {product.seller_name}
+                        </span>
+                        <Button 
+                          size="sm" 
+                          onClick={() => handleAddToCart(product.id)}
+                          disabled={product.stock === 0}
+                        >
+                          <ShoppingCart className="h-4 w-4 mr-1" />
+                          Add to Cart
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </>
+                ) : (
+                  <CardContent className="p-4">
+                    <div className="flex gap-4">
+                      <div className="w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <img 
+                          src={product.image} 
+                          alt={product.name}
+                          className="w-full h-full object-cover rounded-lg"
+                          onerror="this.style.display='none'"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-start justify-between mb-2">
+                          <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
+                            <Link to={`/products/${product.id}`}>
+                              {product.name}
+                            </Link>
+                          </h3>
+                          <Badge variant="secondary">{product.category}</Badge>
+                        </div>
+                        <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                          {product.description}
+                        </p>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            <span className="text-lg font-bold text-blue-600">
+                              {formatPrice(product.price)}
+                            </span>
+                            <span className="text-sm text-gray-500">
+                              Stock: {product.stock}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              by {product.seller_name}
+                            </span>
+                          </div>
+                          <Button 
+                            size="sm" 
+                            onClick={() => handleAddToCart(product.id)}
+                            disabled={product.stock === 0}
+                          >
+                            <ShoppingCart className="h-4 w-4 mr-1" />
+                            Add to Cart
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+    </Layout>
+  );
+};
+
+export default ProductsPage;

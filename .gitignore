@@ -1,0 +1,78 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ===========================================
+# 🔐 SENSITIVE FILES - NEVER COMMIT THESE
+# ===========================================
+
+# Environment variables (contains API keys, credentials)
+.env
+.env.local
+.env.*.local
+.env.*.example
+
+# Firebase Admin SDK keys (service account)
+firebase-adminsdk-*.json
+config/firebase-admin-key.json
+config/*.json
+
+# Database credentials
+database-credentials.json
+*.sql.backup
+
+# API keys and secrets
+*.key
+*.pem
+secrets/
+.secrets/
+
+# Stripe keys
+stripe-*.key
+
+# AWS credentials
+aws-credentials.json
+.aws/
+
+# Google Cloud credentials
+google-cloud-*.json
+gcloud-config/
+
+# Build artifacts with credentials
+dist/
+build/
+.cache/
+
+# IDE files that might contain secrets
+.vscode/settings.json
+.env*.local.backup
+
+# OS
+.DS_Store
+Thumbs.db
+.env.production.local
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

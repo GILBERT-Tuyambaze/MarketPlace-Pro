@@ -1,0 +1,464 @@
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import Layout from '@/components/Layout/Layout';
+import { useAuth } from '@/context/AuthContext';
+import { supabase } from '@/context/AuthContext';
+import { Plus, Upload, X } from 'lucide-react';
+import { toast } from 'sonner';
+
+interface ProductFormData {
+  title: string;
+  description: string;
+  price: number;
+  stock: number;
+  category: string;
+  images: string[];
+  tags: string[];
+}
+
+const AddProduct: React.FC = () => {
+  const navigate = useNavigate();
+  const { user, profile } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [formData, setFormData] = useState<ProductFormData>({
+    title: '',
+    description: '',
+    price: 0,
+    stock: 0,
+    category: '',
+    images: [],
+    tags: []
+  });
+  const [tagInput, setTagInput] = useState('');
+
+  const categories = [
+    { value: 'electronics', label: 'Electronics' },
+    { value: 'fashion', label: 'Fashion' },
+    { value: 'home-garden', label: 'Home & Garden' },
+    { value: 'books-media', label: 'Books & Media' },
+    { value: 'sports', label: 'Sports' },
+    { value: 'beauty', label: 'Beauty' },
+  ];
+
+  // Check if user has permission to add products
+  const canAddProduct = profile?.role === 'seller' || profile?.role === 'admin';
+
+  const handleInputChange = (field: keyof ProductFormData, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setImageUploading(true);
+    const uploadedImages: string[] = [];
+
+    try {
+      for (const file of Array.from(files)) {
+        // Check file size (max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+          toast.error(`File ${file.name} is too large. Max size is 5MB.`);
+          continue;
+        }
+
+        // Check file type
+        if (!file.type.startsWith('image/')) {
+          toast.error(`File ${file.name} is not an image.`);
+          continue;
+        }
+
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${user?.id}/${Date.now()}-${Math.random()}.${fileExt}`;
+
+        const { data, error } = await supabase.storage
+          .from('product-images')
+          .upload(fileName, file);
+
+        if (error) {
+          console.error('Error uploading image:', error);
+          toast.error(`Failed to upload ${file.name}`);
+          continue;
+        }
+
+        // Get public URL
+        const { data: { publicUrl } } = supabase.storage
+          .from('product-images')
+          .getPublicUrl(fileName);
+
+        uploadedImages.push(publicUrl);
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        images: [...prev.images, ...uploadedImages]
+      }));
+
+      if (uploadedImages.length > 0) {
+        toast.success(`${uploadedImages.length} image(s) uploaded successfully`);
+      }
+    } catch (error) {
+      console.error('Error uploading images:', error);
+      toast.error('Failed to upload images');
+    } finally {
+      setImageUploading(false);
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      images: prev.images.filter((_, i) => i !== index)
+    }));
+  };
+
+  const addTag = () => {
+    if (tagInput.trim() && !formData.tags.includes(tagInput.trim())) {
+      setFormData(prev => ({
+        ...prev,
+        tags: [...prev.tags, tagInput.trim()]
+      }));
+      setTagInput('');
+    }
+  };
+
+  const removeTag = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      tags: prev.tags.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!user) {
+      toast.error('You must be logged in to add products');
+      return;
+    }
+
+    if (!canAddProduct) {
+      toast.error('You do not have permission to add products');
+      return;
+    }
+
+    // Validation
+    if (!formData.title.trim()) {
+      toast.error('Product title is required');
+      return;
+    }
+    if (!formData.description.trim()) {
+      toast.error('Product description is required');
+      return;
+    }
+    if (formData.price <= 0) {
+      toast.error('Price must be greater than 0');
+      return;
+    }
+    if (formData.stock < 0) {
+      toast.error('Stock cannot be negative');
+      return;
+    }
+    if (!formData.category) {
+      toast.error('Please select a category');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .insert({
+          seller_id: user.id,
+          title: formData.title.trim(),
+          description: formData.description.trim(),
+          price: formData.price,
+          stock: formData.stock,
+          category: formData.category,
+          images: formData.images,
+          tags: formData.tags,
+          status: profile?.role === 'admin' ? 'approved' : 'pending' // Admin products auto-approved
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      toast.success(
+        profile?.role === 'admin' 
+          ? 'Product added successfully!' 
+          : 'Product submitted for approval!'
+      );
+      
+      // Navigate back to dashboard
+      if (profile?.role === 'admin') {
+        navigate('/admin/dashboard');
+      } else {
+        navigate('/seller/dashboard');
+      }
+    } catch (error) {
+      console.error('Error adding product:', error);
+      toast.error('Failed to add product');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!canAddProduct) {
+    return (
+      <Layout>
+        <div className="container mx-auto px-6 py-8">
+          <div className="max-w-2xl mx-auto text-center">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-8">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h2>
+              <p className="text-gray-600 mb-6">
+                You do not have permission to add products. Only sellers and admins can add products.
+              </p>
+            </div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  return (
+    <Layout>
+      <div className="container mx-auto px-6 py-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="mb-8">
+            <h1 className="text-4xl font-bold text-gray-900 mb-4">Add New Product</h1>
+            <p className="text-gray-600">
+              Create a new product listing for your store
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit}>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Main Product Information */}
+              <div className="lg:col-span-2 space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Product Information</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <Label htmlFor="title">Product Title *</Label>
+                      <Input
+                        id="title"
+                        value={formData.title}
+                        onChange={(e) => handleInputChange('title', e.target.value)}
+                        placeholder="Enter product title"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="description">Description *</Label>
+                      <Textarea
+                        id="description"
+                        value={formData.description}
+                        onChange={(e) => handleInputChange('description', e.target.value)}
+                        placeholder="Describe your product in detail"
+                        rows={5}
+                        required
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="price">Price ($) *</Label>
+                        <Input
+                          id="price"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={formData.price}
+                          onChange={(e) => handleInputChange('price', parseFloat(e.target.value) || 0)}
+                          placeholder="0.00"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <Label htmlFor="stock">Stock Quantity *</Label>
+                        <Input
+                          id="stock"
+                          type="number"
+                          min="0"
+                          value={formData.stock}
+                          onChange={(e) => handleInputChange('stock', parseInt(e.target.value) || 0)}
+                          placeholder="0"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="category">Category *</Label>
+                      <Select value={formData.category} onValueChange={(value) => handleInputChange('category', value)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select a category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {categories.map((cat) => (
+                            <SelectItem key={cat.value} value={cat.value}>
+                              {cat.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Product Images */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Product Images</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div>
+                        <Label htmlFor="images">Upload Images</Label>
+                        <Input
+                          id="images"
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          onChange={handleImageUpload}
+                          disabled={imageUploading}
+                        />
+                        <p className="text-sm text-gray-500 mt-1">
+                          Select multiple images (max 5MB each)
+                        </p>
+                      </div>
+
+                      {/* Image Preview */}
+                      {formData.images.length > 0 && (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          {formData.images.map((image, index) => (
+                            <div key={index} className="relative group">
+                              <img
+                                src={image}
+                                alt={`Product ${index + 1}`}
+                                className="w-full h-24 object-cover rounded-lg border"
+                              />
+                              <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() => removeImage(index)}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {imageUploading && (
+                        <div className="text-center py-4">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                          <p className="text-sm text-gray-500 mt-2">Uploading images...</p>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Sidebar */}
+              <div className="space-y-6">
+                {/* Tags */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Product Tags</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <Input
+                          value={tagInput}
+                          onChange={(e) => setTagInput(e.target.value)}
+                          placeholder="Enter tag"
+                          onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addTag())}
+                        />
+                        <Button type="button" onClick={addTag} size="sm">
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+
+                      {formData.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {formData.tags.map((tag, index) => (
+                            <span
+                              key={index}
+                              className="bg-blue-100 text-blue-800 px-2 py-1 rounded-full text-sm flex items-center gap-1"
+                            >
+                              {tag}
+                              <button
+                                type="button"
+                                onClick={() => removeTag(index)}
+                                className="hover:text-blue-600"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Submit */}
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="space-y-4">
+                      <Button
+                        type="submit"
+                        className="w-full"
+                        disabled={loading || imageUploading}
+                      >
+                        {loading ? 'Adding Product...' : 'Add Product'}
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => navigate(-1)}
+                      >
+                        Cancel
+                      </Button>
+
+                      {profile?.role === 'seller' && (
+                        <p className="text-sm text-gray-500 text-center">
+                          Your product will be submitted for admin approval
+                        </p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
+    </Layout>
+  );
+};
+
+export default AddProduct;

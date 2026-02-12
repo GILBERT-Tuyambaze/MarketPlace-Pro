@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Profiles collection
+    match /profiles/{userId} {
+      // Anyone authenticated can read profiles
+      allow read: if request.auth != null;
+
+      // Create: user can create their own profile after signup
+      allow create: if request.auth != null && request.auth.uid == userId;
+
+      // Update: allow when the user updates their own profile (but not role/seller_status),
+      // or when a user with admin claim performs the update.
+      allow update: if request.auth != null && (
+        // admin custom claim required for role changes
+        request.auth.token.admin == true
+        || (
+          request.auth.uid == userId
+          // ensure non-admin cannot change role or seller_status fields
+          && !("role" in request.resource.data) && !("seller_status" in request.resource.data)
+        )
+      );
+
+      // Delete: only admins
+      allow delete: if request.auth != null && request.auth.token.admin == true;
+    }
+
+    // Products collection
+    match /products/{productId} {
+      allow read: if true; // public
+
+      // Create: authenticated users (sellers/admin)
+      allow create: if request.auth != null;
+
+      // Update/Delete: admins or the seller who owns the product
+      allow update, delete: if request.auth != null && (
+        request.auth.token.admin == true || resource.data.seller_id == request.auth.uid
+      );
+    }
+  }
+}
