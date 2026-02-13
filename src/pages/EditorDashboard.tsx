@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import * as Editor from '../lib/editor';
+import Layout from '@/components/Layout/Layout';
 
 export default function EditorDashboard() {
   const { user, profile } = useAuth();
@@ -11,41 +12,43 @@ export default function EditorDashboard() {
   }
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Editor Dashboard</h1>
-      
-      <div className="flex gap-2 mb-4">
-        <button
-          className={`px-4 py-2 rounded ${tab === 'approvals' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
-          onClick={() => setTab('approvals')}
-        >
-          Approvals
-        </button>
-        <button
-          className={`px-4 py-2 rounded ${tab === 'claims' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
-          onClick={() => setTab('claims')}
-        >
-          Claims
-        </button>
-        <button
-          className={`px-4 py-2 rounded ${tab === 'products' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
-          onClick={() => setTab('products')}
-        >
-          Products
-        </button>
-        <button
-          className={`px-4 py-2 rounded ${tab === 'messages' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
-          onClick={() => setTab('messages')}
-        >
-          Messages
-        </button>
-      </div>
+    <Layout>
+      <div className="p-6">
+        <h1 className="text-2xl font-bold mb-4">Editor Dashboard</h1>
+        
+        <div className="flex gap-2 mb-4">
+          <button
+            className={`px-4 py-2 rounded ${tab === 'approvals' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
+            onClick={() => setTab('approvals')}
+          >
+            Approvals
+          </button>
+          <button
+            className={`px-4 py-2 rounded ${tab === 'claims' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
+            onClick={() => setTab('claims')}
+          >
+            Claims
+          </button>
+          <button
+            className={`px-4 py-2 rounded ${tab === 'products' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
+            onClick={() => setTab('products')}
+          >
+            Products
+          </button>
+          <button
+            className={`px-4 py-2 rounded ${tab === 'messages' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
+            onClick={() => setTab('messages')}
+          >
+            Messages
+          </button>
+        </div>
 
-      {tab === 'approvals' && <ApprovalsTab user={user} />}
-      {tab === 'claims' && <ClaimsTab user={user} />}
-      {tab === 'products' && <ProductsTab user={user} />}
-      {tab === 'messages' && <MessagesTab user={user} />}
-    </div>
+        {tab === 'approvals' && <ApprovalsTab user={user} />}
+        {tab === 'claims' && <ClaimsTab user={user} />}
+        {tab === 'products' && <ProductsTab user={user} />}
+        {tab === 'messages' && <MessagesTab user={user} />}
+      </div>
+    </Layout>
   );
 }
 

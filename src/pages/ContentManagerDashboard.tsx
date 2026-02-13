@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import * as CM from '../lib/contentManager';
+import Layout from '@/components/Layout/Layout';
 
 export default function ContentManagerDashboard() {
   const { user, profile } = useAuth();
@@ -11,29 +12,31 @@ export default function ContentManagerDashboard() {
   }
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold mb-4">Content Manager Dashboard</h1>
+    <Layout>
+      <div className="p-6">
+        <h1 className="text-2xl font-bold mb-4">Content Manager Dashboard</h1>
 
-      <div className="flex gap-2 mb-6 flex-wrap">
-        {['products', 'claims', 'messages', 'announcements', 'orders'].map((t) => (
-          <button
-            key={t}
-            className={`px-4 py-2 rounded capitalize transition ${
-              tab === t ? 'bg-blue-600 text-white' : 'bg-gray-200 hover:bg-gray-300'
-            }`}
-            onClick={() => setTab(t as any)}
-          >
-            {t === 'products' ? '📦 Products' : t === 'claims' ? '📋 Claims' : t === 'messages' ? '💬 Messages' : t === 'announcements' ? '📢 Announcements' : '📦 Orders'}
-          </button>
-        ))}
+        <div className="flex gap-2 mb-6 flex-wrap">
+          {['products', 'claims', 'messages', 'announcements', 'orders'].map((t) => (
+            <button
+              key={t}
+              className={`px-4 py-2 rounded capitalize transition ${
+                tab === t ? 'bg-blue-600 text-white' : 'bg-gray-200 hover:bg-gray-300'
+              }`}
+              onClick={() => setTab(t as any)}
+            >
+              {t === 'products' ? '📦 Products' : t === 'claims' ? '📋 Claims' : t === 'messages' ? '💬 Messages' : t === 'announcements' ? '📢 Announcements' : '📦 Orders'}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'products' && <ProductsTab user={user} />}
+        {tab === 'claims' && <ClaimsTab user={user} />}
+        {tab === 'messages' && <MessagesTab user={user} />}
+        {tab === 'announcements' && <AnnouncementsTab user={user} />}
+        {tab === 'orders' && <OrdersTab user={user} />}
       </div>
-
-      {tab === 'products' && <ProductsTab user={user} />}
-      {tab === 'claims' && <ClaimsTab user={user} />}
-      {tab === 'messages' && <MessagesTab user={user} />}
-      {tab === 'announcements' && <AnnouncementsTab user={user} />}
-      {tab === 'orders' && <OrdersTab user={user} />}
-    </div>
+    </Layout>
   );
 }
 
