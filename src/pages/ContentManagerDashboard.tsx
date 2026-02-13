@@ -1,56 +1,642 @@
-import React from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import Layout from '@/components/Layout/Layout';
-import { FileText, Image, Settings } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { useAuth } from '../context/AuthContext';
+import * as CM from '../lib/contentManager';
 
-const ContentManagerDashboard: React.FC = () => {
+export default function ContentManagerDashboard() {
+  const { user } = useAuth();
+  const [tab, setTab] = useState<'products' | 'claims' | 'messages' | 'announcements' | 'orders'>('products');
+
+  if (!user || !CM.canContentManagerPerform(user.role)) {
+    return <div className="p-4">Access denied. Content Manager role required.</div>;
+  }
+
   return (
-    <Layout>
-      <div className="container mx-auto px-6 py-8">
-        <div className="flex items-center mb-8">
-          <div className="bg-gradient-to-r from-purple-600 to-violet-600 text-white p-3 rounded-full mr-4">
-            <FileText className="h-8 w-8" />
-          </div>
-          <div>
-            <h1 className="text-4xl font-bold text-gray-900">Content Manager Dashboard</h1>
-            <p className="text-gray-600">Manage banners, blogs, and marketing content</p>
-          </div>
+    <div className="p-6">
+      <h1 className="text-2xl font-bold mb-4">Content Manager Dashboard</h1>
+
+      <div className="flex gap-2 mb-6 flex-wrap">
+        {['products', 'claims', 'messages', 'announcements', 'orders'].map((t) => (
+          <button
+            key={t}
+            className={`px-4 py-2 rounded capitalize transition ${
+              tab === t ? 'bg-blue-600 text-white' : 'bg-gray-200 hover:bg-gray-300'
+            }`}
+            onClick={() => setTab(t as any)}
+          >
+            {t === 'products' ? '📦 Products' : t === 'claims' ? '📋 Claims' : t === 'messages' ? '💬 Messages' : t === 'announcements' ? '📢 Announcements' : '📦 Orders'}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'products' && <ProductsTab user={user} />}
+      {tab === 'claims' && <ClaimsTab user={user} />}
+      {tab === 'messages' && <MessagesTab user={user} />}
+      {tab === 'announcements' && <AnnouncementsTab user={user} />}
+      {tab === 'orders' && <OrdersTab user={user} />}
+    </div>
+  );
+}
+
+// ============ PRODUCTS TAB ============
+function ProductsTab({ user }: { user: any }) {
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [noteText, setNoteText] = useState('');
+  const [history, setHistory] = useState<any[]>([]);
+  const [notes, setNotes] = useState<any[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const p = await CM.fetchProducts();
+      setProducts(p as any[]);
+      setLoading(false);
+    })();
+  }, []);
+
+  async function handleSelectProduct(productId: string) {
+    setSelectedProduct(productId);
+    setEditTitle('');
+    setEditDesc('');
+    const prod = products.find((p) => p.id === productId);
+    if (prod) {
+      setEditTitle(prod.title || '');
+      setEditDesc(prod.description || '');
+    }
+    const h = await CM.fetchProductHistory(productId);
+    const n = await CM.fetchProductNotes(productId);
+    setHistory(h as any[]);
+    setNotes(n as any[]);
+  }
+
+  async function handleUpdateProduct() {
+    if (!selectedProduct) return;
+    await CM.updateProductDetails(
+      selectedProduct,
+      { title: editTitle, description: editDesc },
+      user.uid
+    );
+    setEditTitle('');
+    setEditDesc('');
+    alert('Product updated!');
+  }
+
+  async function handleAddNote() {
+    if (!selectedProduct || !noteText) return;
+    await CM.addProductInternalNote(selectedProduct, user.uid, noteText);
+    setNoteText('');
+    const n = await CM.fetchProductNotes(selectedProduct);
+    setNotes(n as any[]);
+    alert('Internal note added!');
+  }
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold">Product Management</h2>
+      {loading && <div>Loading products...</div>}
+
+      <div className="grid grid-cols-2 gap-4">
+        {/* Product List */}
+        <div className="border rounded p-4">
+          <h3 className="font-medium mb-3">Products</h3>
+          <ul className="space-y-2 max-h-80 overflow-y-auto">
+            {products.map((p) => (
+              <li
+                key={p.id}
+                className={`p-2 rounded cursor-pointer border transition ${
+                  selectedProduct === p.id
+                    ? 'bg-blue-100 border-blue-600'
+                    : 'bg-gray-100 border-gray-300 hover:bg-gray-200'
+                }`}
+                onClick={() => handleSelectProduct(p.id)}
+              >
+                <div className="font-sm">{p.title || p.name}</div>
+                <div className="text-xs text-gray-600">${p.price}</div>
+              </li>
+            ))}
+          </ul>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Image className="h-5 w-5 mr-2" />
-                Banner Management
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-600">
-                Content manager dashboard functionality will be implemented here.
-                This includes banner management, blog posts, and marketing assets.
-              </p>
-              {/* Add content-manager-specific features when profile available */}
-            </CardContent>
-          </Card>
+        {/* Product Details */}
+        <div className="border rounded p-4 space-y-3">
+          {selectedProduct ? (
+            <>
+              <h3 className="font-medium">Edit Details</h3>
+              <div>
+                <label className="text-sm font-medium block">Title</label>
+                <input
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="border w-full px-3 py-2 rounded text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium block">Description</label>
+                <textarea
+                  value={editDesc}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                  rows={3}
+                  className="border w-full px-3 py-2 rounded text-sm"
+                />
+              </div>
+              <button
+                onClick={handleUpdateProduct}
+                className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+              >
+                Update Product
+              </button>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center">
-                <Settings className="h-5 w-5 mr-2" />
-                Content Tools
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-600">
-                Advanced content management tools and publishing workflows will be available here.
-              </p>
-            </CardContent>
-          </Card>
+              {/* Internal Notes */}
+              <div className="mt-4 border-t pt-4">
+                <h4 className="text-sm font-medium mb-2">Internal Notes</h4>
+                <div className="mb-2">
+                  <textarea
+                    value={noteText}
+                    onChange={(e) => setNoteText(e.target.value)}
+                    placeholder="Add internal note..."
+                    rows={2}
+                    className="border w-full px-2 py-1 rounded text-xs"
+                  />
+                  <button
+                    onClick={handleAddNote}
+                    className="px-2 py-1 bg-green-600 text-white rounded text-xs mt-1"
+                  >
+                    Add Note
+                  </button>
+                </div>
+                <ul className="space-y-1">
+                  {notes.map((n) => (
+                    <li key={n.id} className="text-xs bg-yellow-50 p-2 rounded">
+                      <strong>{n.role}:</strong> {n.body}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </>
+          ) : (
+            <div className="text-sm text-gray-500">Select a product to edit</div>
+          )}
         </div>
       </div>
-    </Layout>
+    </div>
   );
-};
+}
 
-export default ContentManagerDashboard;
+// ============ CLAIMS TAB ============
+function ClaimsTab({ user }: { user: any }) {
+  const [claims, setClaims] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [newStatus, setNewStatus] = useState('');
+  const [statusNote, setStatusNote] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const c = await CM.fetchClaimsForContentManager();
+      setClaims(c as any[]);
+      setLoading(false);
+    })();
+  }, []);
+
+  async function handleStatusChange(claimId: string, status: string) {
+    try {
+      await CM.updateClaimStatus(claimId, status as any, user.uid, statusNote);
+      const updated = claims.map((c) =>
+        c.id === claimId ? { ...c, status } : c
+      );
+      setClaims(updated);
+      setStatusNote('');
+      alert('Claim status updated!');
+    } catch (err) {
+      console.error(err);
+      alert('Error updating claim');
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold">Content Manager Department Claims</h2>
+      {loading && <div>Loading claims...</div>}
+      {claims.length === 0 && <div className="text-sm text-gray-500">No claims directed to you.</div>}
+
+      <ul className="space-y-3">
+        {claims.map((c) => (
+          <li key={c.id} className="border rounded p-4">
+            <div
+              className="cursor-pointer flex justify-between items-start"
+              onClick={() => setExpandedId(expandedId === c.id ? null : c.id)}
+            >
+              <div>
+                <div className="font-medium">{c.title}</div>
+                <div className="text-sm text-gray-600">From: {c.sender_id}</div>
+                <span className={`inline-block px-2 py-1 rounded text-xs text-white mt-1 ${
+                  c.status === 'resolved' ? 'bg-green-600' : 'bg-yellow-600'
+                }`}>
+                  {c.status}
+                </span>
+              </div>
+            </div>
+
+            {expandedId === c.id && (
+              <div className="mt-3 pt-3 border-t space-y-2">
+                <div className="text-sm">{c.description}</div>
+                <select
+                  value={c.status}
+                  onChange={(e) => setNewStatus(e.target.value)}
+                  className="border px-2 py-1 rounded text-sm"
+                >
+                  <option value="sent">Sent</option>
+                  <option value="under_review">Under Review</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="closed">Closed</option>
+                </select>
+                <textarea
+                  value={statusNote}
+                  onChange={(e) => setStatusNote(e.target.value)}
+                  placeholder="Optional note..."
+                  rows={2}
+                  className="border w-full px-2 py-1 rounded text-sm"
+                />
+                <button
+                  onClick={() => handleStatusChange(c.id, newStatus || c.status)}
+                  className="px-3 py-1 bg-blue-600 text-white rounded text-sm"
+                >
+                  Update Status
+                </button>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// ============ MESSAGES TAB ============
+function MessagesTab({ user }: { user: any }) {
+  const [recipient, setRecipient] = useState('');
+  const [isRoleBased, setIsRoleBased] = useState(true);
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('');
+  const [sending, setSending] = useState(false);
+
+  async function handleSend() {
+    if (!subject || !body || !recipient) {
+      alert('Please fill all fields');
+      return;
+    }
+    setSending(true);
+    try {
+      const recipients = isRoleBased ? [{ role: recipient }] : [{ uid: recipient }];
+      await CM.sendMessage(user.uid, recipients, subject, body);
+      setSubject('');
+      setBody('');
+      setRecipient('');
+      alert('Message sent!');
+    } catch (err) {
+      console.error(err);
+      alert('Error sending message');
+    }
+    setSending(false);
+  }
+
+  return (
+    <div className="space-y-4 max-w-lg">
+      <h2 className="text-lg font-semibold">Send Message</h2>
+
+      <label className="flex items-center">
+        <input
+          type="checkbox"
+          checked={isRoleBased}
+          onChange={(e) => setIsRoleBased(e.target.checked)}
+          className="mr-2"
+        />
+        Role-based message {isRoleBased ? '(vs individual user)' : ''}
+      </label>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">
+          Recipient {isRoleBased ? '(role)' : '(user ID)'}
+        </label>
+        <input
+          value={recipient}
+          onChange={(e) => setRecipient(e.target.value)}
+          placeholder={isRoleBased ? 'e.g., editor, admin, seller' : 'e.g., user-uid'}
+          className="border w-full px-3 py-2 rounded"
+        />
+        {isRoleBased && (
+          <div className="text-xs text-gray-600 mt-1">
+            Available roles: editor, admin, seller, content_manager
+          </div>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">Subject</label>
+        <input
+          value={subject}
+          onChange={(e) => setSubject(e.target.value)}
+          className="border w-full px-3 py-2 rounded"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">Message</label>
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          rows={5}
+          className="border w-full px-3 py-2 rounded"
+        />
+      </div>
+
+      <button
+        onClick={handleSend}
+        disabled={sending}
+        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+      >
+        Send Message
+      </button>
+    </div>
+  );
+}
+
+// ============ ANNOUNCEMENTS TAB ============
+function AnnouncementsTab({ user }: { user: any }) {
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [audience, setAudience] = useState('All users');
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadAnnouncements();
+  }, []);
+
+  async function loadAnnouncements() {
+    setLoading(true);
+    const a = await CM.fetchAnnouncements();
+    setAnnouncements(a as any[]);
+    setLoading(false);
+  }
+
+  async function handleCreate() {
+    if (!title || !content) {
+      alert('Title and content required');
+      return;
+    }
+    try {
+      await CM.createAnnouncement(title, content, audience, undefined, undefined, user.uid);
+      setTitle('');
+      setContent('');
+      setAudience('All users');
+      await loadAnnouncements();
+      alert('Announcement created!');
+    } catch (err) {
+      console.error(err);
+      alert('Error creating announcement');
+    }
+  }
+
+  async function handlePublish(announcementId: string) {
+    try {
+      await CM.publishAnnouncement(announcementId, user.uid);
+      await loadAnnouncements();
+      alert('Announcement published!');
+    } catch (err) {
+      console.error(err);
+      alert('Error publishing announcement');
+    }
+  }
+
+  async function handleDelete(announcementId: string) {
+    if (!window.confirm('Delete this announcement?')) return;
+    try {
+      await CM.deleteAnnouncement(announcementId, user.uid);
+      await loadAnnouncements();
+      alert('Announcement deleted!');
+    } catch (err) {
+      console.error(err);
+      alert('Error deleting announcement');
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold">Website Announcements</h2>
+
+      <div className="border rounded p-4 bg-gray-50 space-y-3">
+        <h3 className="font-medium">Create Announcement</h3>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Title"
+          className="border w-full px-3 py-2 rounded"
+        />
+        <textarea
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          placeholder="Content"
+          rows={4}
+          className="border w-full px-3 py-2 rounded"
+        />
+        <select
+          value={audience}
+          onChange={(e) => setAudience(e.target.value)}
+          className="border w-full px-3 py-2 rounded"
+        >
+          <option>All users</option>
+          <option>Sellers</option>
+          <option>Editors</option>
+          <option>Admins</option>
+          <option>Customers</option>
+        </select>
+        <button
+          onClick={handleCreate}
+          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+        >
+          Create
+        </button>
+      </div>
+
+      {loading && <div>Loading announcements...</div>}
+      <div className="space-y-3">
+        {announcements.map((a) => (
+          <div key={a.id} className="border rounded p-4">
+            <div className="flex justify-between items-start">
+              <div>
+                <div className="font-medium">{a.title}</div>
+                <div className="text-sm text-gray-600">Audience: {a.target_audience}</div>
+                <span className={`inline-block px-2 py-1 rounded text-xs text-white mt-1 ${
+                  a.status === 'published' ? 'bg-green-600' : a.status === 'draft' ? 'bg-yellow-600' : 'bg-gray-600'
+                }`}>
+                  {a.status}
+                </span>
+              </div>
+              <div className="space-x-2">
+                {a.status === 'draft' && (
+                  <button
+                    onClick={() => handlePublish(a.id)}
+                    className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                  >
+                    Publish
+                  </button>
+                )}
+                <button
+                  onClick={() => handleDelete(a.id)}
+                  className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============ ORDERS TAB ============
+function OrdersTab({ user }: { user: any }) {
+  const [orders, setOrders] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchBy, setSearchBy] = useState<'order_id' | 'buyer_name' | 'seller_name'>('order_id');
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [messageSubject, setMessageSubject] = useState('');
+  const [messageBody, setMessageBody] = useState('');
+  const [messageTo, setMessageTo] = useState<'buyer' | 'seller'>('buyer');
+
+  useEffect(() => {
+    loadOrders();
+  }, []);
+
+  async function loadOrders() {
+    setLoading(true);
+    const o = await CM.fetchOrders();
+    setOrders(o as any[]);
+    setLoading(false);
+  }
+
+  async function handleSearch() {
+    setLoading(true);
+    const results = await CM.searchOrders(searchTerm, searchBy);
+    setOrders(results as any[]);
+    setLoading(false);
+  }
+
+  async function handleSendOrderMessage() {
+    if (!selectedOrderId || !messageSubject || !messageBody) {
+      alert('Please fill all fields');
+      return;
+    }
+    try {
+      await CM.sendOrderMessage(
+        selectedOrderId,
+        messageTo,
+        messageSubject,
+        messageBody,
+        user.uid
+      );
+      setMessageSubject('');
+      setMessageBody('');
+      alert('Message sent!');
+    } catch (err) {
+      console.error(err);
+      alert('Error sending message');
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold">Order Tracking & Management</h2>
+
+      {/* Search */}
+      <div className="border rounded p-4 bg-gray-50 space-y-3">
+        <h3 className="font-medium">Search Orders</h3>
+        <div className="flex gap-2">
+          <select
+            value={searchBy}
+            onChange={(e) => setSearchBy(e.target.value as any)}
+            className="border px-3 py-2 rounded"
+          >
+            <option value="order_id">Order ID</option>
+            <option value="buyer_name">Buyer Name</option>
+            <option value="seller_name">Seller Name</option>
+          </select>
+          <input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder={`Search by ${searchBy}...`}
+            className="border flex-1 px-3 py-2 rounded"
+          />
+          <button
+            onClick={handleSearch}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Search
+          </button>
+        </div>
+      </div>
+
+      {loading && <div>Loading orders...</div>}
+
+      <div className="space-y-3 max-h-80 overflow-y-auto">
+        {orders.map((o) => (
+          <div
+            key={o.id}
+            className={`border rounded p-3 cursor-pointer transition ${
+              selectedOrderId === o.id ? 'bg-blue-50 border-blue-600' : 'bg-gray-50 hover:bg-gray-100'
+            }`}
+            onClick={() => setSelectedOrderId(o.id)}
+          >
+            <div className="font-medium">Order {o.id?.slice(0, 8)}</div>
+            <div className="text-sm text-gray-600">Buyer: {o.buyer_name || 'N/A'}</div>
+            <div className="text-sm text-gray-600">Seller: {o.seller_name || 'N/A'}</div>
+            <div className="text-sm text-gray-600">Status: {o.status || 'Pending'}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Order Message */}
+      {selectedOrderId && (
+        <div className="border rounded p-4 bg-yellow-50 space-y-3">
+          <h3 className="font-medium">Send Message for Order</h3>
+          <select
+            value={messageTo}
+            onChange={(e) => setMessageTo(e.target.value as any)}
+            className="border w-full px-3 py-2 rounded"
+          >
+            <option value="buyer">Message Buyer</option>
+            <option value="seller">Message Seller</option>
+          </select>
+          <input
+            value={messageSubject}
+            onChange={(e) => setMessageSubject(e.target.value)}
+            placeholder="Subject"
+            className="border w-full px-3 py-2 rounded"
+          />
+          <textarea
+            value={messageBody}
+            onChange={(e) => setMessageBody(e.target.value)}
+            placeholder="Message"
+            rows={3}
+            className="border w-full px-3 py-2 rounded"
+          />
+          <button
+            onClick={handleSendOrderMessage}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+          >
+            Send Message
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
