@@ -30,12 +30,19 @@ export async function sendAdminMessage(
   body: string
 ) {
   const mRef = collection(db, 'messages');
+  
+  // Extract UIDs and roles for easier querying
+  const recipientUids = recipients.filter(r => r.uid).map(r => r.uid);
+  const recipientRoles = recipients.filter(r => r.role).map(r => (r.role || '').toLowerCase());
+  
   const res = await addDoc(mRef, {
     subject,
     body,
     sender_id: senderId,
     sender_role: 'admin',
     recipients,
+    recipient_uids: recipientUids,
+    recipient_roles: recipientRoles,
     created_at: serverTimestamp(),
   });
 
@@ -93,6 +100,37 @@ export async function fetchMessageHistory(limit_count = 100) {
 }
 
 // ============ 2. CLAIMS MANAGEMENT ============
+
+export async function submitClaim(
+  senderId: string,
+  senderRole: string,
+  title: string,
+  description: string,
+  claimType: string,
+  department: string
+) {
+  const claimsRef = collection(db, 'claims');
+  const res = await addDoc(claimsRef, {
+    title,
+    description,
+    claim_type: claimType,
+    department,
+    sender_id: senderId,
+    sender_role: senderRole,
+    status: 'sent',
+    created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  });
+
+  await logActivity({
+    actor_id: senderId,
+    actor_role: senderRole,
+    action: 'claim_submitted',
+    target: { type: 'claim', id: res.id },
+  });
+
+  return res.id;
+}
 
 export async function fetchAllClaims() {
   const q = query(collection(db, 'claims'), orderBy('created_at', 'desc'));
@@ -276,6 +314,7 @@ export default {
   broadcastAnnouncement,
   fetchAllMessages,
   fetchMessageHistory,
+  submitClaim,
   fetchAllClaims,
   getClaimDetail,
   updateClaimStatusAsAdmin,

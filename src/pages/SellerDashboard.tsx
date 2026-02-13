@@ -30,6 +30,7 @@ import {
   Search,
   Calendar,
   User,
+  AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -57,6 +58,16 @@ interface Message {
   sender_role: string;
   subject: string;
   body: string;
+  created_at: any;
+}
+
+interface Claim {
+  id: string;
+  title: string;
+  description: string;
+  claim_type: string;
+  department: string;
+  status: string;
   created_at: any;
 }
 
@@ -516,7 +527,219 @@ const MessagingTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
   );
 };
 
-// ============ PRODUCTS TAB ============
+// ============ CLAIMS TAB ============
+
+const ClaimsTab: React.FC<{ userId: string; userRole: string }> = ({ userId, userRole }) => {
+  const [claims, setClaims] = useState<Claim[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [claimType, setClaimType] = useState('complaint');
+  const [department, setDepartment] = useState('admin');
+  const [submitting, setSubmitting] = useState(false);
+  const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
+
+  const claimTypes = ['complaint', 'dispute', 'feedback', 'appeal', 'other'];
+  const departments = ['admin', 'editor', 'content_manager'];
+
+  useEffect(() => {
+    const loadClaims = async () => {
+      try {
+        const userClaims = await sellerLib.fetchUserClaims(userId);
+        setClaims(userClaims as any);
+      } catch (error) {
+        console.error('Error loading claims:', error);
+        toast.error('Failed to load claims');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadClaims();
+  }, [userId]);
+
+  const handleSubmitClaim = async () => {
+    if (!title.trim() || !description.trim()) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await sellerLib.submitClaim(userId, userRole, title, description, claimType, department);
+      toast.success('Claim submitted successfully');
+
+      // Clear form
+      setTitle('');
+      setDescription('');
+      setClaimType('complaint');
+      setDepartment('admin');
+
+      // Refresh claims
+      const userClaims = await sellerLib.fetchUserClaims(userId);
+      setClaims(userClaims as any);
+    } catch (error) {
+      console.error('Error submitting claim:', error);
+      toast.error('Failed to submit claim');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8">Loading claims...</div>;
+
+  const getStatusColor = (status: string) => {
+    const colors: { [key: string]: string } = {
+      'sent': 'bg-blue-100 text-blue-800',
+      'under_review': 'bg-yellow-100 text-yellow-800',
+      'resolved': 'bg-green-100 text-green-800',
+      'closed': 'bg-gray-100 text-gray-800',
+    };
+    return colors[status] || 'bg-gray-100 text-gray-800';
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <AlertCircle className="h-5 w-5" />
+            Submit a Claim
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label htmlFor="claim-title">Title *</Label>
+            <Input
+              id="claim-title"
+              placeholder="Brief summary of your claim"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="claim-description">Description *</Label>
+            <Textarea
+              id="claim-description"
+              placeholder="Detailed description of your claim..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={4}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="claim-type">Claim Type</Label>
+              <Select value={claimType} onValueChange={setClaimType}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {claimTypes.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label htmlFor="claim-department">Send to Department</Label>
+              <Select value={department} onValueChange={setDepartment}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {departments.map((dept) => (
+                    <SelectItem key={dept} value={dept}>
+                      {dept === 'admin' ? 'Admin Team' : dept === 'editor' ? 'Editor Team' : 'Content Manager'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <Button onClick={handleSubmitClaim} disabled={submitting} className="w-full">
+            {submitting ? 'Submitting...' : 'Submit Claim'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Your Claims</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {claims.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">No claims yet</p>
+          ) : (
+            <div className="space-y-3">
+              {claims.map((claim) => (
+                <div
+                  key={claim.id}
+                  className="border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
+                  onClick={() => setSelectedClaim(claim)}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex-1">
+                      <h4 className="font-semibold">{claim.title}</h4>
+                      <p className="text-sm text-gray-500">
+                        {claim.created_at?.toDate?.().toLocaleDateString()} • {claim.claim_type}
+                      </p>
+                    </div>
+                    <Badge className={getStatusColor(claim.status)}>
+                      {claim.status.replace('_', ' ')}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-gray-700 line-clamp-2">{claim.description}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {selectedClaim && (
+        <Dialog open={!!selectedClaim} onOpenChange={() => setSelectedClaim(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{selectedClaim.title}</DialogTitle>
+              <DialogDescription>Claim details</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label className="text-gray-600">Status</Label>
+                <Badge className={getStatusColor(selectedClaim.status)}>
+                  {selectedClaim.status.replace('_', ' ')}
+                </Badge>
+              </div>
+              <div>
+                <Label className="text-gray-600">Claim Type</Label>
+                <p className="text-sm">{selectedClaim.claim_type}</p>
+              </div>
+              <div>
+                <Label className="text-gray-600">Department</Label>
+                <p className="text-sm">{selectedClaim.department}</p>
+              </div>
+              <div>
+                <Label className="text-gray-600">Description</Label>
+                <p className="text-sm whitespace-pre-wrap">{selectedClaim.description}</p>
+              </div>
+              <div>
+                <Label className="text-gray-600">Submitted</Label>
+                <p className="text-sm">{selectedClaim.created_at?.toDate?.().toLocaleString()}</p>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+};
+
 
 const ProductsTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
   const [products, setProducts] = useState<any[]>([]);
@@ -886,10 +1109,11 @@ const SellerDashboard: React.FC = () => {
 
         {/* Tabs */}
         <Tabs defaultValue="orders">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="orders">Orders</TabsTrigger>
             <TabsTrigger value="products">Products</TabsTrigger>
             <TabsTrigger value="messaging">Messaging</TabsTrigger>
+            <TabsTrigger value="claims">Claims</TabsTrigger>
           </TabsList>
 
           <TabsContent value="orders">
@@ -902,6 +1126,10 @@ const SellerDashboard: React.FC = () => {
 
           <TabsContent value="messaging">
             <MessagingTab sellerId={user.uid} />
+          </TabsContent>
+
+          <TabsContent value="claims">
+            <ClaimsTab userId={user.uid} userRole={profile?.role || 'seller'} />
           </TabsContent>
         </Tabs>
       </div>

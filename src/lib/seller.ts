@@ -173,12 +173,19 @@ export async function sendSellerMessage(
   body: string
 ) {
   const mRef = collection(db, 'messages');
+  
+  // Extract UIDs and roles for easier querying
+  const recipientUids = recipients.filter(r => r.uid).map(r => r.uid);
+  const recipientRoles = recipients.filter(r => r.role).map(r => (r.role || '').toLowerCase());
+  
   const res = await addDoc(mRef, {
     subject,
     body,
     sender_id: senderId,
     sender_role: 'seller',
     recipients,
+    recipient_uids: recipientUids,
+    recipient_roles: recipientRoles,
     created_at: serverTimestamp(),
   });
 
@@ -193,14 +200,16 @@ export async function sendSellerMessage(
 }
 
 export async function fetchSellerMessages(userId: string) {
-  // Simplified query: removed orderBy to avoid requiring composite index
-  // Will sort client-side instead
+  // Query messages where this seller is explicitly listed as a recipient (by UID)
+  // This covers messages sent directly to the seller by admins/editors
   const q = query(
     collection(db, 'messages'),
-    where('recipients', 'array-contains', { uid: userId })
+    where('recipient_uids', 'array-contains', userId)
   );
+  
   const snap = await getDocs(q);
   const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  
   // Sort client-side by created_at descending
   return docs.sort((a: any, b: any) => {
     const timeA = a.created_at?.toDate?.()?.getTime?.() || 0;
@@ -263,6 +272,61 @@ export async function decreaseProductStock(productId: string, quantity: number) 
   });
 }
 
+// ============ 5. CLAIMS MANAGEMENT ============
+
+export async function submitClaim(
+  senderId: string,
+  senderRole: string,
+  title: string,
+  description: string,
+  claimType: string,
+  department: string
+) {
+  const claimsRef = collection(db, 'claims');
+  const res = await addDoc(claimsRef, {
+    title,
+    description,
+    claim_type: claimType,
+    department,
+    sender_id: senderId,
+    sender_role: senderRole,
+    status: 'sent',
+    created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  });
+
+  await logActivity({
+    actor_id: senderId,
+    actor_role: senderRole,
+    action: 'claim_submitted',
+    target: { type: 'claim', id: res.id },
+  });
+
+  return res.id;
+}
+
+export async function fetchUserClaims(userId: string) {
+  // Query claims submitted by this user
+  const q = query(
+    collection(db, 'claims'),
+    where('sender_id', '==', userId)
+  );
+  const snap = await getDocs(q);
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // Sort client-side by created_at descending
+  return docs.sort((a: any, b: any) => {
+    const timeA = a.created_at?.toDate?.()?.getTime?.() || 0;
+    const timeB = b.created_at?.toDate?.()?.getTime?.() || 0;
+    return timeB - timeA;
+  });
+}
+
+export async function getClaimDetail(claimId: string) {
+  const snap = await getDoc(doc(db, 'claims', claimId));
+  if (!snap.exists()) throw new Error('Claim not found');
+  return { id: snap.id, ...snap.data() };
+}
+
 // ============ ACTIVITY LOGGING ============
 
 export async function logActivity(entry: {
@@ -289,6 +353,9 @@ export default {
   fetchOrderMessages,
   sendSellerMessage,
   fetchSellerMessages,
+  submitClaim,
+  fetchUserClaims,
+  getClaimDetail,
   getSellerProducts,
   addSellerProduct,
   updateSellerProduct,
