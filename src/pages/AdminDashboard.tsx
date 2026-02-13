@@ -74,13 +74,14 @@ interface UserDetail {
 const CommunicationTab: React.FC<{ userId: string }> = ({ userId }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
-  const [messageType, setMessageType] = useState<'role' | 'individual'>('role');
+  const [messageType, setMessageType] = useState<'role' | 'individual' | 'broadcast'>('role');
   const [recipient, setRecipient] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
   const [messageHistory, setMessageHistory] = useState<Message[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [selectedBroadcastRoles, setSelectedBroadcastRoles] = useState<string[]>([]);
 
   useEffect(() => {
     const loadMessages = async () => {
@@ -98,19 +99,42 @@ const CommunicationTab: React.FC<{ userId: string }> = ({ userId }) => {
   }, []);
 
   const handleSendMessage = async () => {
-    if (!recipient || !subject || !body) {
-      toast.error('Please fill in all fields');
+    if (!subject || !body) {
+      toast.error('Please fill in subject and message');
+      return;
+    }
+
+    if (messageType === 'role' && !recipient) {
+      toast.error('Please select a role');
+      return;
+    }
+    if (messageType === 'individual' && !recipient) {
+      toast.error('Please enter a user ID');
+      return;
+    }
+    if (messageType === 'broadcast' && selectedBroadcastRoles.length === 0) {
+      toast.error('Please select at least one role to broadcast to');
       return;
     }
 
     setSending(true);
     try {
-      const recipients = messageType === 'role' 
-        ? [{ role: recipient }]
-        : [{ uid: recipient }];
+      if (messageType === 'broadcast') {
+        // Send to multiple roles
+        for (const role of selectedBroadcastRoles) {
+          await admin.sendAdminMessage(userId, [{ role }], subject, body);
+        }
+        toast.success(`Broadcast sent to ${selectedBroadcastRoles.length} role(s)`);
+        setSelectedBroadcastRoles([]);
+      } else {
+        const recipients = messageType === 'role' 
+          ? [{ role: recipient }]
+          : [{ uid: recipient }];
 
-      await admin.sendAdminMessage(userId, recipients, subject, body);
-      toast.success('Message sent successfully');
+        await admin.sendAdminMessage(userId, recipients, subject, body);
+        toast.success('Message sent successfully');
+      }
+
       setSubject('');
       setBody('');
       setRecipient('');
@@ -148,7 +172,7 @@ const CommunicationTab: React.FC<{ userId: string }> = ({ userId }) => {
         <CardContent className="space-y-4">
           <div>
             <Label>Message Type</Label>
-            <div className="flex gap-4 mt-2">
+            <div className="flex gap-4 mt-2 flex-wrap">
               <label className="flex items-center">
                 <input type="radio" value="role" checked={messageType === 'role'} onChange={(e) => setMessageType(e.target.value as any)} className="mr-2" />
                 Send to Role
@@ -157,12 +181,38 @@ const CommunicationTab: React.FC<{ userId: string }> = ({ userId }) => {
                 <input type="radio" value="individual" checked={messageType === 'individual'} onChange={(e) => setMessageType(e.target.value as any)} className="mr-2" />
                 Send to Individual
               </label>
+              <label className="flex items-center">
+                <input type="radio" value="broadcast" checked={messageType === 'broadcast'} onChange={(e) => setMessageType(e.target.value as any)} className="mr-2" />
+                Broadcast to Multiple
+              </label>
             </div>
           </div>
 
-          <div>
-            <Label>{messageType === 'role' ? 'Select Role' : 'User ID'}</Label>
-            {messageType === 'role' ? (
+          {messageType === 'broadcast' ? (
+            <div>
+              <Label>Select Roles to Broadcast To</Label>
+              <div className="space-y-3 mt-2 border rounded-lg p-4 bg-blue-50">
+                {['seller', 'editor', 'content_manager', 'customer'].map((role) => (
+                  <label key={role} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedBroadcastRoles.includes(role)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedBroadcastRoles([...selectedBroadcastRoles, role]);
+                        } else {
+                          setSelectedBroadcastRoles(selectedBroadcastRoles.filter(r => r !== role));
+                        }
+                      }}
+                    />
+                    <span className="capitalize">All {role === 'content_manager' ? 'Content Managers' : role === 'customer' ? 'Customers' : role + 's'}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : messageType === 'role' ? (
+            <div>
+              <Label>Select Role</Label>
               <Select value={recipient} onValueChange={setRecipient}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select role" />
@@ -174,10 +224,13 @@ const CommunicationTab: React.FC<{ userId: string }> = ({ userId }) => {
                   <SelectItem value="customer">All Customers</SelectItem>
                 </SelectContent>
               </Select>
-            ) : (
+            </div>
+          ) : (
+            <div>
+              <Label>User ID</Label>
               <Input placeholder="Enter user ID" value={recipient} onChange={(e) => setRecipient(e.target.value)} />
-            )}
-          </div>
+            </div>
+          )}
 
           <div>
             <Label>Subject</Label>
@@ -191,7 +244,7 @@ const CommunicationTab: React.FC<{ userId: string }> = ({ userId }) => {
 
           <Button onClick={handleSendMessage} disabled={sending} className="w-full">
             <Send className="h-4 w-4 mr-2" />
-            {sending ? 'Sending...' : 'Send Message'}
+            {sending ? 'Sending...' : messageType === 'broadcast' ? 'Send Broadcast' : 'Send Message'}
           </Button>
         </CardContent>
       </Card>
@@ -305,6 +358,20 @@ const ClaimsTab: React.FC<{ userId: string }> = ({ userId }) => {
     }
   };
 
+  const handleDeleteAllClaims = async () => {
+    if (!confirm(`Delete ALL ${claims.length} claims? This action cannot be undone.`)) return;
+
+    try {
+      const claimIds = claims.map(c => c.id);
+      await admin.deleteMultipleClaims(claimIds, userId);
+      toast.success(`All ${claims.length} claims deleted`);
+      setClaims([]);
+    } catch (error) {
+      console.error('Error deleting all claims:', error);
+      toast.error('Failed to delete all claims');
+    }
+  };
+
   const handleViewDetails = async (claim: Claim) => {
     try {
       const details = await admin.getClaimDetail(claim.id);
@@ -320,6 +387,19 @@ const ClaimsTab: React.FC<{ userId: string }> = ({ userId }) => {
 
   return (
     <div className="space-y-4">
+      {claims.length > 0 && (
+        <div className="flex justify-end gap-2 mb-4">
+          <Button onClick={() => setClaims(claims)} variant="outline" size="sm">
+            Total Claims: {claims.length}
+          </Button>
+          {claims.length > 1 && (
+            <Button onClick={handleDeleteAllClaims} variant="destructive" size="sm">
+              Delete All Claims
+            </Button>
+          )}
+        </div>
+      )}
+
       {claims.length === 0 ? (
         <Card>
           <CardContent className="text-center py-8 text-gray-500">
@@ -420,6 +500,7 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
   const [users, setUsers] = useState<UserDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterRole, setFilterRole] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const [selectedUser, setSelectedUser] = useState<UserDetail | null>(null);
   const [loginHistory, setLoginHistory] = useState<any[]>([]);
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
@@ -465,7 +546,14 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
     }
   };
 
-  const filteredUsers = filterRole === 'all' ? users : users.filter((u) => u.role === filterRole);
+  const filteredUsers = users.filter((u) => {
+    const matchesRole = filterRole === 'all' || u.role === filterRole;
+    const searchLower = searchTerm.toLowerCase();
+    const matchesSearch =
+      u.full_name.toLowerCase().includes(searchLower) ||
+      u.email.toLowerCase().includes(searchLower);
+    return matchesRole && matchesSearch;
+  });
 
   if (loading) return <div className="text-center py-8">Loading...</div>;
 
@@ -473,22 +561,37 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>Filter Users</CardTitle>
+          <CardTitle>Search & Filter Users</CardTitle>
         </CardHeader>
-        <CardContent>
-          <Select value={filterRole} onValueChange={setFilterRole}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Users</SelectItem>
-              <SelectItem value="customer">Customers</SelectItem>
-              <SelectItem value="seller">Sellers</SelectItem>
-              <SelectItem value="editor">Editors</SelectItem>
-              <SelectItem value="content_manager">Content Managers</SelectItem>
-              <SelectItem value="admin">Admins</SelectItem>
-            </SelectContent>
-          </Select>
+        <CardContent className="space-y-4">
+          <div>
+            <label className="text-sm font-medium mb-2 block">Search by Name or Email</label>
+            <Input
+              placeholder="Type name or email..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-2 block">Filter by Role</label>
+            <Select value={filterRole} onValueChange={setFilterRole}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Users</SelectItem>
+                <SelectItem value="customer">Customers</SelectItem>
+                <SelectItem value="seller">Sellers</SelectItem>
+                <SelectItem value="editor">Editors</SelectItem>
+                <SelectItem value="content_manager">Content Managers</SelectItem>
+                <SelectItem value="admin">Admins</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <p className="text-sm text-gray-600">
+            Showing {filteredUsers.length} of {users.length} user{users.length !== 1 ? 's' : ''}
+          </p>
         </CardContent>
       </Card>
 
