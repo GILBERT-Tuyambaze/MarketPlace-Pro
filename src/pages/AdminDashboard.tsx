@@ -34,6 +34,7 @@ import {
   Download,
   Search,
   Settings,
+  Lock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -853,6 +854,7 @@ const SettingsTab: React.FC<{ userId: string }> = ({ userId }) => {
   const [settings, setSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [marketplaceLocked, setMarketplaceLocked] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -862,6 +864,7 @@ const SettingsTab: React.FC<{ userId: string }> = ({ userId }) => {
         const siteSettings = await admin.getSiteSettings();
         setSettings(siteSettings);
         setMaintenanceMode(siteSettings.maintenance_mode || false);
+        setMarketplaceLocked(siteSettings.marketplace_locked || false);
         setMaintenanceMessage(siteSettings.maintenance_message || '');
       } catch (error) {
         console.error('Error loading settings:', error);
@@ -884,6 +887,7 @@ const SettingsTab: React.FC<{ userId: string }> = ({ userId }) => {
       await admin.updateSiteSettings(
         {
           maintenance_mode: maintenanceMode,
+          marketplace_locked: marketplaceLocked,
           maintenance_message: maintenanceMessage,
         },
         userId
@@ -892,6 +896,7 @@ const SettingsTab: React.FC<{ userId: string }> = ({ userId }) => {
       setSettings({
         ...settings,
         maintenance_mode: maintenanceMode,
+        marketplace_locked: marketplaceLocked,
         maintenance_message: maintenanceMessage,
       });
     } catch (error) {
@@ -909,65 +914,142 @@ const SettingsTab: React.FC<{ userId: string }> = ({ userId }) => {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <AlertCircle className="h-5 w-5 text-orange-600" />
-            Website Maintenance Mode
+            <Settings className="h-5 w-5 text-blue-600" />
+            Platform Controls
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <p className="text-sm text-blue-900">
-              When maintenance mode is enabled, the website will display a "Under Maintenance" message to all visitors. 
-              Only administrators will be able to access the full site.
+              Control website access and maintenance status. When enabled, visitors will see a locked/maintenance message instead of the marketplace.
             </p>
           </div>
 
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-4 border rounded-lg bg-gray-50">
+          {/* Marketplace Lock Control */}
+          <div className="border rounded-lg p-4 bg-gray-50">
+            <div className="flex items-center justify-between mb-2">
               <div>
-                <Label className="font-semibold text-base">Maintenance Mode</Label>
+                <Label className="font-semibold text-base">🔒 Marketplace Locked</Label>
                 <p className="text-sm text-gray-600">
-                  {maintenanceMode ? 'Currently ENABLED' : 'Currently DISABLED'}
+                  {marketplaceLocked ? 'Currently LOCKED' : 'Currently OPEN'}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Lock the marketplace for new orders. Users will see "Marketplace Locked" message.
                 </p>
               </div>
               <Button
-                onClick={() => setMaintenanceMode(!maintenanceMode)}
-                variant={maintenanceMode ? 'destructive' : 'outline'}
+                onClick={() => setMarketplaceLocked(!marketplaceLocked)}
+                variant={marketplaceLocked ? 'destructive' : 'outline'}
+                className="ml-4"
               >
-                {maintenanceMode ? 'Disable' : 'Enable'}
+                {marketplaceLocked ? 'Unlock' : 'Lock'}
               </Button>
             </div>
-
-            {maintenanceMode && (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <p className="text-sm text-red-900 font-semibold mb-2">⚠️ Maintenance Mode is Currently Active</p>
-                <p className="text-sm text-red-800">
-                  Regular users will see the maintenance message and won't be able to access the site.
+            
+            {marketplaceLocked && (
+              <div className="bg-red-50 border border-red-200 rounded p-3 mt-3">
+                <p className="text-sm text-red-900 font-semibold">🔴 Marketplace is Currently Locked</p>
+                <p className="text-xs text-red-800 mt-1">
+                  New orders are disabled. Existing customers can still browse.
                 </p>
               </div>
             )}
           </div>
 
+          {/* Maintenance Mode Control */}
+          <div className="border rounded-lg p-4 bg-gray-50">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <Label className="font-semibold text-base">🔧 Maintenance Mode</Label>
+                <p className="text-sm text-gray-600">
+                  {maintenanceMode ? 'Currently ENABLED' : 'Currently DISABLED'}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Full maintenance mode. Only admins can access the site.
+                </p>
+              </div>
+              <Button
+                onClick={() => setMaintenanceMode(!maintenanceMode)}
+                variant={maintenanceMode ? 'destructive' : 'outline'}
+                className="ml-4"
+              >
+                {maintenanceMode ? 'Disable' : 'Enable'}
+              </Button>
+            </div>
+            
+            {maintenanceMode && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded p-3 mt-3">
+                <p className="text-sm text-yellow-900 font-semibold">⚠️ Full Maintenance Mode Active</p>
+                <p className="text-xs text-yellow-800 mt-1">
+                  All regular users are blocked. Site shows maintenance message.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Status Summary */}
+          <div className="grid grid-cols-2 gap-4 pt-4 border-t">
+            <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+              <CardContent className="p-4">
+                <div className="text-sm">
+                  <p className="text-gray-600 font-medium">Marketplace Status</p>
+                  <p className={`text-2xl font-bold ${marketplaceLocked ? 'text-red-600' : 'text-green-600'}`}>
+                    {marketplaceLocked ? '🔒 LOCKED' : '✅ OPEN'}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+              <CardContent className="p-4">
+                <div className="text-sm">
+                  <p className="text-gray-600 font-medium">Maintenance Status</p>
+                  <p className={`text-2xl font-bold ${maintenanceMode ? 'text-orange-600' : 'text-green-600'}`}>
+                    {maintenanceMode ? '🔧 ON' : '✅ OFF'}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Maintenance Message Editor */}
+      <Card>
+        <CardHeader>
+          <CardTitle>📝 Maintenance & Lock Message</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
           <div>
-            <Label htmlFor="maintenance-msg">Maintenance Message</Label>
+            <Label htmlFor="maintenance-msg">Message to Display</Label>
             <p className="text-sm text-gray-600 mb-2">
-              This message will be displayed to visitors when maintenance mode is enabled
+              This message will be shown when either marketplace is locked or maintenance mode is enabled
             </p>
             <Textarea
               id="maintenance-msg"
               value={maintenanceMessage}
               onChange={(e) => setMaintenanceMessage(e.target.value)}
-              placeholder="Enter maintenance message..."
-              rows={5}
-              className="w-full"
+              placeholder="Enter maintenance/lock message..."
+              rows={6}
+              className="w-full font-mono text-sm"
             />
           </div>
 
           <div className="bg-gray-50 p-4 rounded-lg border">
-            <p className="font-semibold text-sm mb-2">Preview:</p>
-            <div className="bg-white border rounded p-4 text-center">
-              <AlertCircle className="h-12 w-12 text-orange-600 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Website Under Maintenance</h3>
-              <p className="text-gray-600 text-sm">{maintenanceMessage}</p>
+            <p className="font-semibold text-sm mb-3">📋 Live Preview:</p>
+            <div className="bg-white border-2 border-gray-300 rounded-lg p-6 text-center">
+              <div className="mb-4">
+                {maintenanceMode ? (
+                  <AlertCircle className="h-12 w-12 text-orange-600 mx-auto" />
+                ) : marketplaceLocked ? (
+                  <Lock className="h-12 w-12 text-red-600 mx-auto" />
+                ) : (
+                  <span className="text-4xl">✅</span>
+                )}
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                {maintenanceMode ? 'Website Under Maintenance' : marketplaceLocked ? 'Marketplace Locked' : 'Website Operational'}
+              </h3>
+              <p className="text-gray-600 text-sm whitespace-pre-wrap">{maintenanceMessage || 'No message set'}</p>
             </div>
           </div>
 
@@ -977,17 +1059,17 @@ const SettingsTab: React.FC<{ userId: string }> = ({ userId }) => {
             className="w-full"
             size="lg"
           >
-            {saving ? 'Saving...' : 'Save Settings'}
+            {saving ? 'Saving...' : 'Save All Settings'}
           </Button>
         </CardContent>
       </Card>
 
-      {settings?.maintenance_enabled_at && (
-        <Card className="bg-yellow-50 border-yellow-200">
-          <CardContent className="pt-6">
-            <p className="text-sm text-yellow-900">
-              <strong>Last Enabled:</strong> {settings.maintenance_enabled_at?.toDate?.().toLocaleString()}
-              {settings.maintenance_enabled_by && ` by ${settings.maintenance_enabled_by}`}
+      {/* Last Updated Info */}
+      {settings?.updated_at && (
+        <Card className="bg-gray-50 border-gray-200">
+          <CardContent className="pt-6 text-sm text-gray-600">
+            <p>
+              ⏱️ <strong>Last Updated:</strong> {settings.updated_at?.toDate?.().toLocaleString() || 'Unknown'}
             </p>
           </CardContent>
         </Card>

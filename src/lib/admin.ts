@@ -330,13 +330,13 @@ export async function getPendingSellerRequests() {
 // ============ 6. SITE SETTINGS & MAINTENANCE ============
 
 export async function getSiteSettings() {
-  const snap = await getDoc(doc(db, 'settings', 'site'));
+  const snap = await getDoc(doc(db, 'settings', 'platform'));
   if (!snap.exists()) {
     return {
       maintenance_mode: false,
       maintenance_message: 'The website is currently under maintenance. Please check back soon.',
-      maintenance_enabled_at: null,
-      maintenance_enabled_by: null,
+      marketplace_locked: false,
+      updated_at: null,
     };
   }
   return snap.data();
@@ -346,19 +346,15 @@ export async function updateSiteSettings(
   settings: {
     maintenance_mode?: boolean;
     maintenance_message?: string;
+    marketplace_locked?: boolean;
   },
   actorId?: string
 ) {
-  const settingsRef = doc(db, 'settings', 'site');
+  const settingsRef = doc(db, 'settings', 'platform');
   const updates: any = {
     ...settings,
-    last_updated_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
   };
-
-  if (settings.maintenance_mode !== undefined) {
-    updates.maintenance_enabled_at = settings.maintenance_mode ? serverTimestamp() : null;
-    updates.maintenance_enabled_by = settings.maintenance_mode ? actorId : null;
-  }
 
   await updateDoc(settingsRef, updates);
 
