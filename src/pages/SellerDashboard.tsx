@@ -458,6 +458,183 @@ const MessagingTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
   );
 };
 
+// ============ PRODUCTS TAB ============
+
+const ProductsTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    title: '',
+    description: '',
+    price: 0,
+    stock: 0,
+    category: 'electronics',
+    image: 'https://dummyimage.com/300x300/cccccc/969696?text=Product',
+  });
+
+  useEffect(() => {
+    const loadProducts = async () => {
+      try {
+        const sellerProducts = await sellerLib.getSellerProducts(sellerId);
+        setProducts(sellerProducts);
+      } catch (error) {
+        console.error('Error loading products:', error);
+        toast.error('Failed to load products');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadProducts();
+  }, [sellerId]);
+
+  const handleAddProduct = async () => {
+    if (!formData.name || !formData.title || !formData.price || formData.price <= 0) {
+      toast.error('Please fill in required fields');
+      return;
+    }
+
+    try {
+      await sellerLib.addSellerProduct(sellerId, formData);
+      toast.success('Product added successfully');
+      setFormData({
+        name: '',
+        title: '',
+        description: '',
+        price: 0,
+        stock: 0,
+        category: 'electronics',
+        image: 'https://dummyimage.com/300x300/cccccc/969696?text=Product',
+      });
+      setShowAddForm(false);
+      
+      // Reload products
+      const updated = await sellerLib.getSellerProducts(sellerId);
+      setProducts(updated);
+    } catch (error) {
+      console.error('Error adding product:', error);
+      toast.error('Failed to add product');
+    }
+  };
+
+  if (loading) return <div className="text-center py-8">Loading products...</div>;
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>My Products ({products.length})</CardTitle>
+          <Button onClick={() => setShowAddForm(!showAddForm)}>
+            {showAddForm ? 'Cancel' : '+ Add Product'}
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {showAddForm && (
+            <div className="mb-6 border rounded-lg p-4 bg-gray-50">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label>Product Name *</Label>
+                  <Input
+                    placeholder="e.g., Wireless Headphones"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Title *</Label>
+                  <Input
+                    placeholder="e.g., Premium Bluetooth Headphones"
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Category</Label>
+                  <Select value={formData.category} onValueChange={(val) => setFormData({ ...formData, category: val })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="electronics">Electronics</SelectItem>
+                      <SelectItem value="fashion">Fashion</SelectItem>
+                      <SelectItem value="home-garden">Home & Garden</SelectItem>
+                      <SelectItem value="sports">Sports</SelectItem>
+                      <SelectItem value="beauty">Beauty</SelectItem>
+                      <SelectItem value="books-media">Books & Media</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Price (USD) *</Label>
+                  <Input
+                    type="number"
+                    placeholder="0.00"
+                    min="0"
+                    step="0.01"
+                    value={formData.price}
+                    onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
+                  />
+                </div>
+                <div>
+                  <Label>Stock Quantity</Label>
+                  <Input
+                    type="number"
+                    placeholder="0"
+                    min="0"
+                    value={formData.stock}
+                    onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
+                <div>
+                  <Label>Image URL</Label>
+                  <Input
+                    placeholder="https://..."
+                    value={formData.image}
+                    onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <Label>Description</Label>
+                  <Textarea
+                    placeholder="Product details..."
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    rows={3}
+                  />
+                </div>
+              </div>
+              <Button onClick={handleAddProduct} className="w-full mt-4">Add Product</Button>
+            </div>
+          )}
+
+          {products.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">No products yet. Add your first product!</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {products.map((product) => (
+                <Card key={product.id} className="border">
+                  <CardContent className="p-4">
+                    <img src={product.image} alt={product.name} className="w-full h-40 object-cover rounded mb-3" />
+                    <h3 className="font-semibold text-sm mb-1">{product.name}</h3>
+                    <p className="text-xs text-gray-600 mb-2 line-clamp-2">{product.title}</p>
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold">${product.price.toFixed(2)}</span>
+                      <Badge variant={product.stock > 5 ? 'default' : product.stock > 0 ? 'secondary' : 'destructive'}>
+                        Stock: {product.stock}
+                      </Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+};
+
 // ============ MAIN COMPONENT ============
 
 const SellerDashboard: React.FC = () => {
@@ -468,6 +645,7 @@ const SellerDashboard: React.FC = () => {
     const loadStats = async () => {
       if (!user) return;
       try {
+
         const orders = await sellerLib.fetchSellerOrders(user.uid);
         setStats({
           totalOrders: orders.length,
@@ -542,13 +720,18 @@ const SellerDashboard: React.FC = () => {
 
         {/* Tabs */}
         <Tabs defaultValue="orders">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="orders">Orders</TabsTrigger>
+            <TabsTrigger value="products">Products</TabsTrigger>
             <TabsTrigger value="messaging">Messaging</TabsTrigger>
           </TabsList>
 
           <TabsContent value="orders">
             <OrdersTab sellerId={user.uid} />
+          </TabsContent>
+
+          <TabsContent value="products">
+            <ProductsTab sellerId={user.uid} />
           </TabsContent>
 
           <TabsContent value="messaging">

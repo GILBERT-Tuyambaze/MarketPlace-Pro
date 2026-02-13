@@ -10,6 +10,7 @@ import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebaseClient';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
+import * as sellerLib from '@/lib/seller';
 import { CreditCard, Lock, Truck } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -90,6 +91,16 @@ const CheckoutPage: React.FC = () => {
       };
 
       const orderRef = await addDoc(collection(db, 'orders'), orderData);
+
+      // Decrease stock for each product in the order
+      for (const item of items) {
+        try {
+          await sellerLib.decreaseProductStock(item.product_id, item.quantity);
+        } catch (stockError) {
+          console.error('Error decreasing stock for product ' + item.product_id, stockError);
+          // Don't fail the order if stock update fails - log it but continue
+        }
+      }
 
       // Clear cart
       await clearCart();

@@ -4,7 +4,7 @@ import * as Editor from '../lib/editor';
 
 export default function EditorDashboard() {
   const { user } = useAuth();
-  const [tab, setTab] = useState<'approvals' | 'claims' | 'messages'>('approvals');
+  const [tab, setTab] = useState<'approvals' | 'claims' | 'messages' | 'products'>('approvals');
 
   if (!user || !(Editor.canEditorPerform(user.role))) {
     return <div className="p-4">Access denied. Editor role required.</div>;
@@ -28,6 +28,12 @@ export default function EditorDashboard() {
           Claims
         </button>
         <button
+          className={`px-4 py-2 rounded ${tab === 'products' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
+          onClick={() => setTab('products')}
+        >
+          Products
+        </button>
+        <button
           className={`px-4 py-2 rounded ${tab === 'messages' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
           onClick={() => setTab('messages')}
         >
@@ -37,6 +43,7 @@ export default function EditorDashboard() {
 
       {tab === 'approvals' && <ApprovalsTab user={user} />}
       {tab === 'claims' && <ClaimsTab user={user} />}
+      {tab === 'products' && <ProductsTab user={user} />}
       {tab === 'messages' && <MessagesTab user={user} />}
     </div>
   );
@@ -249,6 +256,190 @@ function MessagesTab({ user }: { user: any }) {
   );
 }
 
+function ProductsTab({ user }: { user: any }) {
+  const [products, setProducts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    title: '',
+    description: '',
+    price: 0,
+    stock: 0,
+    category: 'electronics',
+    image: 'https://dummyimage.com/300x300/cccccc/969696?text=Product',
+  });
+
+  useEffect(() => {
+    const loadProducts = async () => {
+      try {
+        const editorProducts = await Editor.getEditorProducts(user.uid);
+        setProducts(editorProducts);
+      } catch (error) {
+        console.error('Error loading products:', error);
+        alert('Failed to load products');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadProducts();
+  }, [user.uid]);
+
+  const handleAddProduct = async () => {
+    if (!formData.name || !formData.title || !formData.price || formData.price <= 0) {
+      alert('Please fill in required fields');
+      return;
+    }
+
+    try {
+      await Editor.addEditorProduct(user.uid, formData);
+      alert('Product added successfully');
+      setFormData({
+        name: '',
+        title: '',
+        description: '',
+        price: 0,
+        stock: 0,
+        category: 'electronics',
+        image: 'https://dummyimage.com/300x300/cccccc/969696?text=Product',
+      });
+      setShowAddForm(false);
+      
+      // Reload products
+      const updated = await Editor.getEditorProducts(user.uid);
+      setProducts(updated);
+    } catch (error) {
+      console.error('Error adding product:', error);
+      alert('Failed to add product');
+    }
+  };
+
+  if (loading) return <div>Loading products...</div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h2 className="text-lg font-semibold">My Products ({products.length})</h2>
+        <button
+          onClick={() => setShowAddForm(!showAddForm)}
+          className={`px-4 py-2 rounded text-white ${showAddForm ? 'bg-gray-600' : 'bg-blue-600'}`}
+        >
+          {showAddForm ? 'Cancel' : '+ Add Product'}
+        </button>
+      </div>
+
+      {showAddForm && (
+        <div className="border rounded-lg p-4 bg-gray-50">
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium">Product Name *</label>
+              <input
+                placeholder="e.g., Wireless Headphones"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                className="border w-full px-3 py-2 rounded"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium">Title *</label>
+              <input
+                placeholder="e.g., Premium Bluetooth Headphones"
+                value={formData.title}
+                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                className="border w-full px-3 py-2 rounded"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium">Description</label>
+              <textarea
+                placeholder="Product details..."
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="border w-full px-3 py-2 rounded"
+                rows={3}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium">Category</label>
+                <select
+                  value={formData.category}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  className="border w-full px-3 py-2 rounded"
+                >
+                  <option value="electronics">Electronics</option>
+                  <option value="fashion">Fashion</option>
+                  <option value="home-garden">Home & Garden</option>
+                  <option value="sports">Sports</option>
+                  <option value="beauty">Beauty</option>
+                  <option value="books-media">Books & Media</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Price (USD) *</label>
+                <input
+                  type="number"
+                  placeholder="0.00"
+                  min="0"
+                  step="0.01"
+                  value={formData.price}
+                  onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
+                  className="border w-full px-3 py-2 rounded"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium">Stock Quantity</label>
+                <input
+                  type="number"
+                  placeholder="0"
+                  min="0"
+                  value={formData.stock}
+                  onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })}
+                  className="border w-full px-3 py-2 rounded"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Image URL</label>
+                <input
+                  placeholder="https://..."
+                  value={formData.image}
+                  onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+                  className="border w-full px-3 py-2 rounded"
+                />
+              </div>
+            </div>
+          </div>
+          <button onClick={handleAddProduct} className="w-full mt-4 px-4 py-2 bg-green-600 text-white rounded">
+            Add Product
+          </button>
+        </div>
+      )}
+
+      {products.length === 0 ? (
+        <p className="text-gray-500 text-center py-8">No products yet. Add your first product!</p>
+      ) : (
+        <div className="grid grid-cols-3 gap-4">
+          {products.map((product) => (
+            <div key={product.id} className="border rounded p-3">
+              <img src={product.image} alt={product.name} className="w-full h-32 object-cover rounded mb-2" />
+              <h3 className="font-semibold text-sm">{product.name}</h3>
+              <p className="text-xs text-gray-600 mb-2 line-clamp-1">{product.title}</p>
+              <div className="flex justify-between items-center">
+                <span className="font-bold">${product.price.toFixed(2)}</span>
+                <span className={`text-xs px-2 py-1 rounded ${product.stock > 5 ? 'bg-green-100 text-green-800' : product.stock > 0 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
+                  Stock: {product.stock}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ApproveButtons({ itemId, type, onDone, actorId }: { itemId: string; type: 'product' | 'seller'; onDone: () => void; actorId: string }) {
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false);
@@ -283,6 +474,7 @@ function ApproveButtons({ itemId, type, onDone, actorId }: { itemId: string; typ
       </button>
       <button className="btn btn-sm bg-yellow-600 text-white mr-1" disabled={busy} onClick={() => doDecision('needs_revision')}>
         Needs Revision
+
       </button>
       <button className="btn btn-sm bg-red-600 text-white" disabled={busy} onClick={() => doDecision('rejected')}>
         Reject

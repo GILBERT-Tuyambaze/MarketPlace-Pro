@@ -208,6 +208,60 @@ export async function fetchSellerMessages(userId: string) {
   });
 }
 
+// ============ PRODUCT MANAGEMENT ============
+
+export async function getSellerProducts(sellerId: string) {
+  const q = query(
+    collection(db, 'products'),
+    where('seller_id', '==', sellerId)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+export async function addSellerProduct(sellerId: string, productData: {
+  name: string;
+  title: string;
+  description: string;
+  price: number;
+  stock: number;
+  category: string;
+  image: string;
+}) {
+  const productsRef = collection(db, 'products');
+  const docRef = await addDoc(productsRef, {
+    ...productData,
+    seller_id: sellerId,
+    status: 'draft',
+    created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  });
+  return docRef.id;
+}
+
+export async function updateSellerProduct(productId: string, updates: any) {
+  const productRef = doc(db, 'products', productId);
+  await updateDoc(productRef, {
+    ...updates,
+    updated_at: serverTimestamp(),
+  });
+}
+
+export async function decreaseProductStock(productId: string, quantity: number) {
+  const productRef = doc(db, 'products', productId);
+  const productSnap = await getDoc(productRef);
+  
+  if (!productSnap.exists()) throw new Error('Product not found');
+  
+  const currentStock = productSnap.data().stock || 0;
+  const newStock = Math.max(0, currentStock - quantity);
+  
+  await updateDoc(productRef, {
+    stock: newStock,
+    updated_at: serverTimestamp(),
+  });
+}
+
 // ============ ACTIVITY LOGGING ============
 
 export async function logActivity(entry: {
@@ -234,5 +288,9 @@ export default {
   fetchOrderMessages,
   sendSellerMessage,
   fetchSellerMessages,
+  getSellerProducts,
+  addSellerProduct,
+  updateSellerProduct,
+  decreaseProductStock,
   logActivity,
 };

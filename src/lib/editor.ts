@@ -197,6 +197,62 @@ export async function fetchUserClaims(userId: string) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
+// ============ PRODUCT MANAGEMENT FOR EDITORS ============
+
+export async function getEditorProducts(editorId: string) {
+  const q = query(
+    collection(db, 'products'),
+    where('editor_id', '==', editorId)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+export async function addEditorProduct(editorId: string, productData: {
+  name: string;
+  title: string;
+  description: string;
+  price: number;
+  stock: number;
+  category: string;
+  image: string;
+}) {
+  const productsRef = collection(db, 'products');
+  const docRef = await addDoc(productsRef, {
+    ...productData,
+    editor_id: editorId,
+    status: 'draft',
+    created_at: serverTimestamp(),
+    updated_at: serverTimestamp(),
+  });
+  return docRef.id;
+}
+
+export async function updateEditorProduct(productId: string, updates: any) {
+  const productRef = doc(db, 'products', productId);
+  await updateDoc(productRef, {
+    ...updates,
+    updated_at: serverTimestamp(),
+  });
+}
+
+export async function decreaseProductStock(productId: string, quantity: number) {
+  const productRef = doc(db, 'products', productId);
+  const productSnap = await getDoc(productRef);
+  
+  if (!productSnap.exists()) throw new Error('Product not found');
+  
+  const currentStock = productSnap.data().stock || 0;
+  const newStock = Math.max(0, currentStock - quantity);
+  
+  await updateDoc(productRef, {
+    stock: newStock,
+    updated_at: serverTimestamp(),
+  });
+}
+
+// ============ ACTIVITY LOGGING ============
+
 export async function logActivity(entry: { actor_id: string; actor_role: string; action: string; target?: any }) {
   const logsRef = collection(db, 'activity_logs');
   await addDoc(logsRef, {
@@ -221,6 +277,10 @@ export default {
   updateClaimStatus,
   fetchClaimsForDepartment,
   fetchUserClaims,
+  getEditorProducts,
+  addEditorProduct,
+  updateEditorProduct,
+  decreaseProductStock,
   logActivity,
   canEditorPerform,
 };
