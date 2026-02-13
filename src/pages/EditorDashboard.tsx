@@ -476,11 +476,14 @@ function ProductsTab({ user }: { user: any }) {
                 )}
                 
                 {formData.image && formData.image !== 'https://dummyimage.com/300x300/cccccc/969696?text=Product' && (
-                  <div className="mt-3">
+                  <div className="mt-4 border-2 border-gray-300 rounded-lg overflow-hidden shadow-md hover:shadow-lg transition-shadow">
+                    <div className="bg-gray-100 p-2">
+                      <span className="text-xs text-gray-600">Image Preview</span>
+                    </div>
                     <img 
                       src={formData.image} 
                       alt="Product preview" 
-                      className="w-full h-40 object-cover rounded border"
+                      className="w-full h-64 object-cover bg-gray-100"
                       onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://dummyimage.com/300x300/cccccc/969696?text=Invalid+Image'; }}
                     />
                   </div>

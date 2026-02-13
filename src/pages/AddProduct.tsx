@@ -489,27 +489,35 @@ const AddProduct: React.FC = () => {
 
                       {/* Image Preview */}
                       {formData.images.length > 0 && (
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                          {formData.images.map((image, index) => (
-                            <div key={index} className="relative group">
-                              <img
-                                src={image}
-                                alt={`Product ${index + 1}`}
-                                loading="lazy"
-                                onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://via.placeholder.com/300?text=Image+Unavailable'; }}
-                                className="w-full h-24 object-cover rounded-lg border"
-                              />
-                              <Button
-                                type="button"
-                                variant="destructive"
-                                size="sm"
-                                className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                                onClick={() => removeImage(index)}
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          ))}
+                        <div>
+                          <Label className="mb-3 block">Image Preview ({formData.images.length})</Label>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {formData.images.map((image, index) => (
+                              <div key={index} className="relative group border-2 border-gray-300 rounded-lg overflow-hidden shadow-md hover:shadow-lg transition-shadow">
+                                <img
+                                  src={image}
+                                  alt={`Product ${index + 1}`}
+                                  loading="lazy"
+                                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://dummyimage.com/300x300/cccccc/969696?text=Invalid+Image'; }}
+                                  className="w-full h-48 object-cover bg-gray-100"
+                                />
+                                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 transition-all flex items-center justify-center">
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="sm"
+                                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={() => removeImage(index)}
+                                  >
+                                    <X className="h-4 w-4 mr-1" /> Remove
+                                  </Button>
+                                </div>
+                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black to-transparent text-white text-xs px-2 py-2">
+                                  Image {index + 1}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
