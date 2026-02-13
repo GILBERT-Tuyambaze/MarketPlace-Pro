@@ -20,6 +20,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Orders from './pages/Orders';
 import Profile from './pages/Profile';
+import SellerProfile from './pages/SellerProfile';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminClaimsManager from './pages/AdminClaimsManager';
@@ -80,6 +81,7 @@ const router = createBrowserRouter([
   { path: '/', element: <Index /> },
   { path: '/products', element: <Products /> },
   { path: '/products/:id', element: <ProductDetail /> },
+  { path: '/seller/:sellerId', element: <SellerProfile /> },
   { path: '/cart', element: <Cart /> },
   { path: '/login', element: <Login /> },
   { path: '/register', element: <Register /> },
