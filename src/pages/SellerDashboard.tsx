@@ -232,14 +232,14 @@ const OrdersTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
                   </div>
                   <p className="text-sm text-gray-600 mb-2">
                     <User className="h-4 w-4 inline mr-1" />
-                    Buyer: {order.buyer_name}
+                    Buyer: {order.buyer_name || (order as any).user_id || 'Unknown'}
                   </p>
                   <p className="text-sm text-gray-600 mb-2">
                     <Calendar className="h-4 w-4 inline mr-1" />
                     {order.created_at?.toDate?.().toLocaleDateString()}
                   </p>
                   <p className="text-lg font-semibold text-indigo-600">
-                    Total: ${parseFloat(order.total_amount).toFixed(2)}
+                    Total: ${parseFloat(((order as any).total_amount || (order as any).totalAmount || 0)).toFixed(2)}
                   </p>
                 </div>
                 <div className="flex gap-2 ml-4">
@@ -321,10 +321,18 @@ const OrdersTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
               <div>
                 <h4 className="font-semibold mb-2">Buyer Information</h4>
                 <div className="border rounded-lg p-3 mb-3">
-                  <p className="font-semibold">{(selectedOrder as any).buyerProfile?.full_name || selectedOrder.buyer_name}</p>
-                  <p className="text-sm text-gray-600">{(selectedOrder as any).buyerProfile?.email || ''}</p>
-                  <p className="text-sm text-gray-600">{(selectedOrder as any).buyerProfile?.phone || ''}</p>
-                  <p className="text-sm text-gray-600">{(selectedOrder as any).buyerProfile?.address || ''}</p>
+                  <p className="font-semibold">{(selectedOrder as any).buyerProfile?.full_name || selectedOrder.buyer_name || (selectedOrder as any).user_id}</p>
+                  <p className="text-sm text-gray-600">{(selectedOrder as any).buyerProfile?.email || (selectedOrder as any).shippingInfo?.email || ''}</p>
+                  <p className="text-sm text-gray-600">{(selectedOrder as any).buyerProfile?.phone || (selectedOrder as any).shippingInfo?.phone || ''}</p>
+                  <div className="text-sm text-gray-600">
+                    {(selectedOrder as any).buyerProfile?.address || (selectedOrder as any).shippingInfo?.address || ''}
+                    {(selectedOrder as any).shippingInfo ? (
+                      <div>
+                        <div>{(selectedOrder as any).shippingInfo?.city || ''} {(selectedOrder as any).shippingInfo?.state ? ', ' + (selectedOrder as any).shippingInfo?.state : ''} {(selectedOrder as any).shippingInfo?.zipCode || ''}</div>
+                        <div>{(selectedOrder as any).shippingInfo?.country || ''}</div>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
 
                 <h4 className="font-semibold mb-2">Message Buyer</h4>
