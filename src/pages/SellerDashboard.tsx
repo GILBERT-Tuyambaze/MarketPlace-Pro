@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -19,6 +20,8 @@ import {
   where,
   orderBy,
   onSnapshot,
+  doc as fbDoc,
+  getDoc as fbGetDoc,
 } from 'firebase/firestore';
 import {
   Package,
@@ -69,6 +72,8 @@ const OrdersTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
   const [showHistory, setShowHistory] = useState(false);
   const [itemStatuses, setItemStatuses] = useState<{ [key: string]: string }>({});
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [messageSubject, setMessageSubject] = useState('');
+  const [messageBody, setMessageBody] = useState('');
 
   useEffect(() => {
     const loadOrders = async () => {
@@ -103,7 +108,17 @@ const OrdersTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
   const handleViewOrder = async (order: Order) => {
     try {
       const detail = await sellerLib.getOrderDetail(order.id);
-      setSelectedOrder(detail as any);
+      // fetch buyer profile for address/contact info
+      let buyerProfile: any = null;
+      try {
+        if (detail.buyer_id) {
+          const buyerSnap = await fbGetDoc(fbDoc(db, 'profiles', detail.buyer_id));
+          if (buyerSnap.exists()) buyerProfile = buyerSnap.data();
+        }
+      } catch (err) {
+        console.warn('Failed to load buyer profile', err);
+      }
+      setSelectedOrder({ ...(detail as any), buyerProfile } as any);
       // Initialize item status selectors
       const statuses: { [key: string]: string } = {};
       detail.items?.forEach((item: any, idx: number) => {
@@ -113,6 +128,23 @@ const OrdersTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
     } catch (error) {
       console.error('Error loading order detail:', error);
       toast.error('Failed to load order details');
+    }
+  };
+
+  const handleSendMessageToBuyer = async () => {
+    if (!selectedOrder) return;
+    if (!messageSubject || !messageBody) {
+      toast.error('Please enter subject and message');
+      return;
+    }
+    try {
+      await sellerLib.sendOrderMessage(selectedOrder.id, sellerId, 'seller', 'buyer', messageSubject, messageBody);
+      toast.success('Message sent to buyer');
+      setMessageSubject('');
+      setMessageBody('');
+    } catch (err) {
+      console.error('Error sending message to buyer', err);
+      toast.error('Failed to send message');
     }
   };
 
@@ -286,9 +318,26 @@ const OrdersTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
                 </div>
               </div>
 
-              <Button onClick={() => setSelectedOrder(null)} className="w-full">
-                Close
-              </Button>
+              <div>
+                <h4 className="font-semibold mb-2">Buyer Information</h4>
+                <div className="border rounded-lg p-3 mb-3">
+                  <p className="font-semibold">{(selectedOrder as any).buyerProfile?.full_name || selectedOrder.buyer_name}</p>
+                  <p className="text-sm text-gray-600">{(selectedOrder as any).buyerProfile?.email || ''}</p>
+                  <p className="text-sm text-gray-600">{(selectedOrder as any).buyerProfile?.phone || ''}</p>
+                  <p className="text-sm text-gray-600">{(selectedOrder as any).buyerProfile?.address || ''}</p>
+                </div>
+
+                <h4 className="font-semibold mb-2">Message Buyer</h4>
+                <div className="space-y-2 mb-3">
+                  <Input placeholder="Subject" value={messageSubject} onChange={(e) => setMessageSubject(e.target.value)} />
+                  <Textarea placeholder="Message" rows={3} value={messageBody} onChange={(e) => setMessageBody(e.target.value)} />
+                  <Button onClick={handleSendMessageToBuyer} className="w-full">Send Message</Button>
+                </div>
+
+                <Button onClick={() => setSelectedOrder(null)} className="w-full">
+                  Close
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
@@ -464,6 +513,7 @@ const ProductsTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     name: '',
@@ -489,6 +539,8 @@ const ProductsTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
     };
     loadProducts();
   }, [sellerId]);
+
+  const navigate = useNavigate();
 
   const handleAddProduct = async () => {
     if (!formData.name || !formData.title || !formData.price || formData.price <= 0) {
@@ -684,7 +736,7 @@ const ProductsTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {products.map((product) => (
-                <Card key={product.id} className="border">
+                <Card key={product.id} className="border cursor-pointer hover:shadow" onClick={() => setSelectedProduct(product)}>
                   <CardContent className="p-4">
                     <img src={product.image} alt={product.name} className="w-full h-40 object-cover rounded mb-3" />
                     <h3 className="font-semibold text-sm mb-1">{product.name}</h3>
@@ -702,6 +754,39 @@ const ProductsTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
           )}
         </CardContent>
       </Card>
+      {selectedProduct && (
+        <Dialog open={!!selectedProduct} onOpenChange={() => setSelectedProduct(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{selectedProduct.name}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <img src={selectedProduct.image} alt={selectedProduct.name} className="w-full h-64 object-cover rounded" />
+              <p className="text-sm text-gray-600">{selectedProduct.title}</p>
+              <div className="flex gap-2">
+                <Button onClick={() => navigate(`/add-product?edit=${selectedProduct.id}`)}>Edit</Button>
+                <Button
+                  variant="destructive"
+                  onClick={async () => {
+                    try {
+                      await sellerLib.updateSellerProduct(selectedProduct.id, { status: 'deleted' });
+                      toast.success('Product deleted');
+                      const updated = await sellerLib.getSellerProducts(sellerId);
+                      setProducts(updated);
+                      setSelectedProduct(null);
+                    } catch (err) {
+                      console.error('Error deleting product:', err);
+                      toast.error('Failed to delete product');
+                    }
+                  }}
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };
