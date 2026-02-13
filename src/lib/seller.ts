@@ -22,14 +22,20 @@ export function canSellerPerform(role: string) {
 
 export async function fetchSellerOrders(sellerId: string, pageSize = 50) {
   // Query orders where this seller is involved (via sellers array)
+  // Note: Removed orderBy to avoid requiring composite index in development
   const q = query(
     collection(db, 'orders'),
     where('sellers', 'array-contains', sellerId),
-    orderBy('created_at', 'desc'),
     limit(pageSize)
   );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // Sort client-side by created_at descending
+  return docs.sort((a: any, b: any) => {
+    const timeA = a.created_at?.toDate?.()?.getTime?.() || 0;
+    const timeB = b.created_at?.toDate?.()?.getTime?.() || 0;
+    return timeB - timeA;
+  });
 }
 
 export async function getOrderDetail(orderId: string) {
@@ -186,13 +192,20 @@ export async function sendSellerMessage(
 }
 
 export async function fetchSellerMessages(userId: string) {
+  // Simplified query: removed orderBy to avoid requiring composite index
+  // Will sort client-side instead
   const q = query(
     collection(db, 'messages'),
-    where('recipients', 'array-contains', { uid: userId }),
-    orderBy('created_at', 'desc')
+    where('recipients', 'array-contains', { uid: userId })
   );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // Sort client-side by created_at descending
+  return docs.sort((a: any, b: any) => {
+    const timeA = a.created_at?.toDate?.()?.getTime?.() || 0;
+    const timeB = b.created_at?.toDate?.()?.getTime?.() || 0;
+    return timeB - timeA;
+  });
 }
 
 // ============ ACTIVITY LOGGING ============
