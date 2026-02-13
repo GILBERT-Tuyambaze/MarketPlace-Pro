@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import Layout from '@/components/Layout/Layout';
 import { useAuth } from '@/context/AuthContext';
 import { db as firebaseDb } from '@/lib/firebaseClient';
@@ -441,9 +441,10 @@ const ClaimsTab: React.FC<{ userId: string }> = ({ userId }) => {
       {selectedClaim && claimDetails && (
         <Dialog open={!!selectedClaim} onOpenChange={() => setSelectedClaim(null)}>
           <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>{selectedClaim.title}</DialogTitle>
-            </DialogHeader>
+              <DialogHeader>
+                <DialogTitle>{selectedClaim.title}</DialogTitle>
+              </DialogHeader>
+              <DialogDescription className="sr-only">Claim details and actions for {selectedClaim.title}</DialogDescription>
             <div className="space-y-4">
               <div>
                 <h4 className="font-semibold mb-2">Description</h4>

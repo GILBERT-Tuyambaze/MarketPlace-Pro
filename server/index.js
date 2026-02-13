@@ -53,5 +53,54 @@ app.post('/set-claims', async (req, res) => {
   }
 });
 
+// Verify Firebase ID token and return decoded token or null
+async function verifyUser(req) {
+  const auth = req.headers.authorization || '';
+  if (!auth.startsWith('Bearer ')) return null;
+  const idToken = auth.split(' ')[1];
+  try {
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    return decoded;
+  } catch (err) {
+    console.error('Error verifying ID token:', err && err.message ? err.message : err);
+    return null;
+  }
+}
+
+// Generate a v4 signed URL for direct browser uploads (PUT). Returns write URL and a read URL.
+app.post('/generate-upload-url', async (req, res) => {
+  try {
+    const user = await verifyUser(req);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { name, contentType } = req.body || {};
+    if (!name) return res.status(400).json({ error: 'Missing file name' });
+
+    const bucket = admin.storage().bucket();
+    // sanitize filename
+    const baseName = path.basename(String(name)).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const filePath = `product-images/${user.uid}/${Date.now()}-${Math.random().toString(36).substr(2,9)}-${baseName}`;
+    const file = bucket.file(filePath);
+
+    const options = {
+      version: 'v4',
+      action: 'write',
+      expires: Date.now() + 15 * 60 * 1000, // 15 minutes
+      contentType: contentType || 'application/octet-stream',
+    };
+
+    const [signedUrl] = await file.getSignedUrl(options);
+
+    // construct a read URL that can be used to access the uploaded file via the Firebase Storage REST endpoint
+    const bucketName = bucket.name || (process.env.FIREBASE_STORAGE_BUCKET || '');
+    const readUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(filePath)}?alt=media`;
+
+    return res.json({ signedUrl, filePath, readUrl });
+  } catch (err) {
+    console.error('generate-upload-url error:', err && err.message ? err.message : err);
+    return res.status(500).json({ error: err && err.message ? err.message : String(err) });
+  }
+});
+
 const port = process.env.PORT || 4000;
 app.listen(port, () => console.log(`Admin server listening on http://localhost:${port}`));

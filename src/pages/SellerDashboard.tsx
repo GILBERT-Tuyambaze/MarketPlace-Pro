@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import Layout from '@/components/Layout/Layout';
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebaseClient';
@@ -259,9 +259,10 @@ const OrdersTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
       {selectedOrder && (
         <Dialog open={!!selectedOrder} onOpenChange={() => setSelectedOrder(null)}>
           <DialogContent className="max-w-3xl max-h-96 overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Order Details - #{selectedOrder.id.slice(0, 8)}</DialogTitle>
-            </DialogHeader>
+              <DialogHeader>
+                <DialogTitle>Order Details - #{selectedOrder.id.slice(0, 8)}</DialogTitle>
+              </DialogHeader>
+              <DialogDescription className="sr-only">Details and actions for order {selectedOrder.id}</DialogDescription>
             <div className="space-y-6">
               <div>
                 <h4 className="font-semibold mb-2">Items & Status</h4>
@@ -765,9 +766,10 @@ const ProductsTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
       {selectedProduct && (
         <Dialog open={!!selectedProduct} onOpenChange={() => setSelectedProduct(null)}>
           <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>{selectedProduct.name}</DialogTitle>
-            </DialogHeader>
+              <DialogHeader>
+                <DialogTitle>{selectedProduct.name}</DialogTitle>
+              </DialogHeader>
+              <DialogDescription className="sr-only">Product details and actions for {selectedProduct.name}</DialogDescription>
             <div className="space-y-4">
               <img src={selectedProduct.image} alt={selectedProduct.name} className="w-full h-64 object-cover rounded" />
               <p className="text-sm text-gray-600">{selectedProduct.title}</p>

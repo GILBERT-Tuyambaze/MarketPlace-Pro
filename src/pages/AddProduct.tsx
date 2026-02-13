@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Label } from '@/components/ui/label';
 import Layout from '@/components/Layout/Layout';
 import { useAuth } from '@/context/AuthContext';
-import { storage, db } from '@/lib/firebaseClient';
+import { storage, db, auth } from '@/lib/firebaseClient';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { collection, addDoc, Timestamp, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { X, Plus } from 'lucide-react';
@@ -155,10 +155,84 @@ const AddProduct: React.FC = () => {
     }));
   };
 
+  // Upload file to Firebase Storage via signed URL (server-side fallback).
+  // Calls server endpoint which returns v4 signed URLs, then PUT to the signed URL.
+  const uploadFileViaSigned = async (file: File): Promise<string | null> => {
+    try {
+      const idToken = await user.getIdToken();
+
+      // Step 1: Request signed URL from server
+      const signResponse = await fetch('http://localhost:4000/generate-upload-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ name: file.name, contentType: file.type }),
+      });
+
+      if (!signResponse.ok) {
+        const err = await signResponse.text();
+        throw new Error(`Server error: ${err}`);
+      }
+
+      const { signedUrl, readUrl } = await signResponse.json();
+      if (!signedUrl) throw new Error('No signed URL returned from server');
+
+      // Step 2: PUT file to the signed URL (no CORS issues on signed URLs)
+      const uploadPromise = (async () => {
+        const putResponse = await fetch(signedUrl, {
+          method: 'PUT',
+          headers: { 'Content-Type': file.type },
+          body: file,
+        });
+        if (!putResponse.ok) throw new Error(`Upload failed: ${putResponse.statusText}`);
+        // Return the read-friendly URL
+        return readUrl;
+      })();
+
+      const timeoutMs = 30000; // 30 seconds
+      const timeoutPromise = new Promise<string>((_, reject) =>
+        setTimeout(() => reject(new Error('upload_timeout')), timeoutMs)
+      );
+
+      return await Promise.race([uploadPromise, timeoutPromise]);
+    } catch (err) {
+      console.error('uploadFileViaSigned error:', err);
+      return null;
+    }
+  };
+
+  // Upload file directly to Firebase Storage (client-side, subject to CORS).
+  // Falls back to server-side signed URL if CORS fails.
+  const uploadFileWithFallback = async (file: File): Promise<string | null> => {
+    try {
+      const fileName = `product-images/${user.uid}/${Date.now()}-${Math.random().toString(36).substr(2, 9)}.jpg`;
+      const fileRef = ref(storage, fileName);
+
+      const uploadPromise = (async () => {
+        await uploadBytes(fileRef, file);
+        return await getDownloadURL(fileRef);
+      })();
+
+      const timeoutMs = 30000; // 30 seconds
+      const timeoutPromise = new Promise<string>((_, reject) =>
+        setTimeout(() => reject(new Error('upload_timeout')), timeoutMs)
+      );
+
+      return await Promise.race([uploadPromise, timeoutPromise]);
+    } catch (clientErr) {
+      console.warn('Client-side upload failed, attempting server-side signed URL...', clientErr);
+      // Fall back to server-side signed URL approach
+      return await uploadFileViaSigned(file);
+    }
+  };
+
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
+    // Upload files immediately to avoid heavy data URLs being stored and to prevent submit-time hangs
     for (const file of Array.from(files)) {
       if (file.size > 5 * 1024 * 1024) {
         toast.error(`File ${file.name} is too large. Max size is 5MB.`);
@@ -170,15 +244,45 @@ const AddProduct: React.FC = () => {
         continue;
       }
 
-      // Create local preview using FileReader
+      // Create local preview immediately
       const reader = new FileReader();
       reader.onload = (e) => {
         const dataUrl = e.target?.result as string;
+        // push preview so user sees it while uploading
         setFormData(prev => ({
           ...prev,
           images: [...prev.images, dataUrl]
         }));
         toast.success(`Image preview added for ${file.name}`);
+
+        // start upload in background and replace preview with download URL when ready
+        (async () => {
+          setImageUploading(true);
+          try {
+            // Use unified upload function that tries client-side first, then falls back to signed URL
+            const downloadURL = await uploadFileWithFallback(file);
+            
+            if (downloadURL) {
+              // replace the preview dataUrl with the download URL
+              setFormData(prev => ({
+                ...prev,
+                images: prev.images.map((img) => (img === dataUrl ? downloadURL : img))
+              }));
+            } else {
+              throw new Error('Failed to get download URL');
+            }
+          } catch (err) {
+            console.error('Background upload failed for', file.name, err);
+            toast.error(`Failed to upload ${file.name}. That image will be skipped.`);
+            // remove the preview we added
+            setFormData(prev => ({
+              ...prev,
+              images: prev.images.filter((img) => img !== dataUrl)
+            }));
+          } finally {
+            setImageUploading(false);
+          }
+        })();
       };
       reader.readAsDataURL(file);
     }
@@ -226,10 +330,12 @@ const AddProduct: React.FC = () => {
     }
 
     setLoading(true);
+    setImageUploading(true);
 
     try {
       // Handle image uploads - convert data URLs to Firebase URLs
       const uploadedImages: string[] = [];
+      // Only include successfully uploaded URLs (skip large data URLs that failed to upload)
       for (const image of formData.images) {
         // Check if it's a data URL (local file) or regular URL
         if (image.startsWith('data:')) {
@@ -238,18 +344,22 @@ const AddProduct: React.FC = () => {
             const response = await fetch(image);
             const blob = await response.blob();
             
-            // Upload to Firebase Storage
-            const fileName = `product-images/${user.uid}/${Date.now()}-${Math.random().toString(36).substr(2, 9)}.jpg`;
-            const fileRef = ref(storage, fileName);
-            await uploadBytes(fileRef, blob);
+            // Create a File object from blob for upload
+            const file = new File([blob], 'product-image.jpg', { type: blob.type });
             
-            // Get download URL
-            const downloadURL = await getDownloadURL(fileRef);
-            uploadedImages.push(downloadURL);
+            // Use unified upload function that tries client-side first, then falls back to signed URL
+            const downloadURL = await uploadFileWithFallback(file);
+            
+            if (downloadURL) {
+              uploadedImages.push(downloadURL);
+            } else {
+              throw new Error('Failed to get download URL');
+            }
           } catch (uploadError) {
             console.error('Error uploading image:', uploadError);
-            toast.error('Failed to upload one of the images. Using preview instead.');
-            uploadedImages.push(image); // Fallback to data URL if upload fails
+            toast.error('Failed to upload one of the images. That image will be skipped.');
+            // Do NOT push the large data URL into Firestore (can exceed document size limits)
+            continue;
           }
         } else {
           // Regular URL, use as-is
@@ -277,17 +387,21 @@ const AddProduct: React.FC = () => {
         // Update existing product
         const productRef = doc(db, 'products', editId);
         await updateDoc(productRef, productData);
-        
         toast.success('Product updated successfully!');
+        // ensure uploading state cleared before navigation
+        setImageUploading(false);
+        setLoading(false);
       } else {
         // Add new product
         await addDoc(collection(db, 'products'), productData);
-        
         toast.success(
           profile?.role === 'admin' 
             ? 'Product added successfully!' 
             : 'Product submitted for approval!'
         );
+        // ensure uploading state cleared before navigation
+        setImageUploading(false);
+        setLoading(false);
       }
       
       // Navigate back to dashboard
@@ -301,6 +415,7 @@ const AddProduct: React.FC = () => {
       toast.error('Failed to save product');
     } finally {
       setLoading(false);
+      setImageUploading(false);
     }
   };
 
@@ -480,7 +595,7 @@ const AddProduct: React.FC = () => {
                                   src={image}
                                   alt={`Product ${index + 1}`}
                                   loading="lazy"
-                                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://dummyimage.com/300x300/cccccc/969696?text=Invalid+Image'; }}
+                                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="100%" height="100%" fill="%23cccccc"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%23969696" font-size="20">Invalid Image</text></svg>'; }}
                                   className="w-full h-48 object-cover bg-gray-100"
                                 />
                                 <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 transition-all flex items-center justify-center">
@@ -560,7 +675,7 @@ const AddProduct: React.FC = () => {
                         className="w-full"
                         disabled={loading || imageUploading}
                       >
-                        {loading ? (isEdit ? 'Updating...' : 'Adding...') : (isEdit ? 'Update Product' : 'Add Product')}
+                        {imageUploading ? 'Uploading files...' : loading ? (isEdit ? 'Updating...' : 'Adding...') : (isEdit ? 'Update Product' : 'Add Product')}
                       </Button>
 
                       <Button
