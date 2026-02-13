@@ -302,12 +302,7 @@ const ProductDetailPage: React.FC = () => {
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Badge variant="secondary">{product.category}</Badge>
-                {product.profiles.seller_status === 'approved' && (
-                  <Badge variant="outline" className="text-green-600 border-green-600">
-                    <Shield className="h-3 w-3 mr-1" />
-                    Verified Seller
-                  </Badge>
-                )}
+                {/* Verified seller badge - can be enabled when seller data is attached to product */}
               </div>
               <h1 className="text-3xl font-bold text-gray-900 mb-4">{product.name}</h1>
               <div className="flex items-center gap-4 mb-4">

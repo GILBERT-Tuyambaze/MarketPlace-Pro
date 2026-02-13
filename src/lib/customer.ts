@@ -104,15 +104,23 @@ export async function fetchProductComments(
   try {
     const commentsQuery = query(
       collection(db, 'product_comments'),
-      where('product_id', '==', productId),
-      orderBy('created_at', 'desc')
+      where('product_id', '==', productId)
     );
 
     const snapshot = await getDocs(commentsQuery);
-    return snapshot.docs.map((doc) => ({
+    const comments = snapshot.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     })) as ProductComment[];
+
+    // Sort by creation date (newest first) client-side
+    comments.sort((a, b) => {
+      const aTime = a.created_at?.toMillis?.() || 0;
+      const bTime = b.created_at?.toMillis?.() || 0;
+      return bTime - aTime;
+    });
+
+    return comments;
   } catch (error) {
     console.error('Error fetching product comments:', error);
     throw error;
@@ -403,13 +411,10 @@ export async function getSimilarProducts(
   limit: number = 6
 ): Promise<ProductSummary[]> {
   try {
-    // Fetch products from same category
+    // Fetch products from same category (no complex filter ordering)
     const similarQuery = query(
       collection(db, 'products'),
-      where('category', '==', category),
-      where('status', '!=', 'deleted'),
-      orderBy('status'),
-      orderBy('rating', 'desc')
+      where('category', '==', category)
     );
 
     const snapshot = await getDocs(similarQuery);
@@ -426,6 +431,7 @@ export async function getSimilarProducts(
         } as ProductSummary;
       })
       .filter((p) => p.id !== productId) // Exclude current product
+      .sort((a, b) => (b.rating || 0) - (a.rating || 0)) // Sort by rating client-side
       .slice(0, limit);
 
     return products;
