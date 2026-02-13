@@ -10,6 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import GlobalChat from '@/components/GlobalChat';
 import { 
   ShoppingCart, 
   Search, 
@@ -131,6 +132,11 @@ const Header: React.FC = () => {
 
           {/* Right side actions */}
           <div className="flex items-center space-x-4">
+            {/* Global Chat */}
+            {user && (
+              <GlobalChat />
+            )}
+
             {/* Cart */}
             <Link to="/cart">
               <Button variant="ghost" size="sm" className="relative">
