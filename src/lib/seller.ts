@@ -59,14 +59,15 @@ export async function searchSellerOrders(
 
   // For buyer_name and product_name, fetch all seller orders and filter client-side
   const orders = await fetchSellerOrders(sellerId);
+  const searchLower = searchTerm.toLowerCase();
   if (searchBy === 'buyer_name') {
     return orders.filter((o) =>
-      (o as any)?.buyer_name?.toLowerCase().includes(searchTerm.toLowerCase())
+      ((o as any)?.buyer_name || '').toLowerCase().includes(searchLower)
     );
   } else if (searchBy === 'product_name') {
     return orders.filter((o) =>
       (o as any)?.items?.some((item: any) =>
-        item?.product_name?.toLowerCase().includes(searchTerm.toLowerCase())
+        ((item?.product_name) || '').toLowerCase().includes(searchLower)
       )
     );
   }

@@ -215,25 +215,35 @@ export async function updateUserStatus(
 }
 
 export async function fetchUserActivityLogs(userId: string) {
+  // Avoid composite index by removing server-side orderBy; sort client-side instead
   const q = query(
     collection(db, 'activity_logs'),
     where('actor_id', '==', userId),
-    orderBy('created_at', 'desc'),
     limit(50)
   );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return docs.sort((a: any, b: any) => {
+    const ta = a.created_at?.toDate?.()?.getTime?.() || 0;
+    const tb = b.created_at?.toDate?.()?.getTime?.() || 0;
+    return tb - ta;
+  });
 }
 
 export async function fetchUserLoginHistory(userId: string) {
+  // Avoid composite index requirement by removing server-side orderBy
   const q = query(
     collection(db, 'login_history'),
     where('user_id', '==', userId),
-    orderBy('login_at', 'desc'),
     limit(20)
   );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  return docs.sort((a: any, b: any) => {
+    const ta = a.login_at?.toDate?.()?.getTime?.() || 0;
+    const tb = b.login_at?.toDate?.()?.getTime?.() || 0;
+    return tb - ta;
+  });
 }
 
 export async function logLoginAttempt(userId: string, ipAddress?: string) {

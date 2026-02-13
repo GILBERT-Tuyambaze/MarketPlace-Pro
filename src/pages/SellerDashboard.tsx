@@ -464,9 +464,7 @@ const ProductsTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [imageUploadMode, setImageUploadMode] = useState<'file' | 'url'>('url');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [imageUploading, setImageUploading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     title: '',
@@ -525,39 +523,37 @@ const ProductsTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
     }
   };
 
-  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
-    setImageUploading(true);
-    try {
-      const file = files[0];
+    for (const file of Array.from(files)) {
       if (file.size > 5 * 1024 * 1024) {
-        toast.error('File is too large. Max size is 5MB.');
-        return;
+        toast.error(`File ${file.name} is too large. Max size is 5MB.`);
+        continue;
       }
 
       if (!file.type.startsWith('image/')) {
-        toast.error('File must be an image.');
-        return;
+        toast.error(`File ${file.name} is not an image.`);
+        continue;
       }
 
-      // Create local preview URL
+      // Create local preview using FileReader
       const reader = new FileReader();
       reader.onload = (e) => {
-        const result = e.target?.result as string;
-        setFormData({ ...formData, image: result });
-        toast.success('Image selected');
+        const dataUrl = e.target?.result as string;
+        setFormData(prev => ({
+          ...prev,
+          image: dataUrl
+        }));
+        toast.success(`Image preview loaded for ${file.name}`);
       };
       reader.readAsDataURL(file);
-    } catch (error) {
-      console.error('Error handling image:', error);
-      toast.error('Failed to handle image');
-    } finally {
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      setImageUploading(false);
+    }
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
@@ -631,40 +627,29 @@ const ProductsTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
                 </div>
                 <div className="md:col-span-2">
                   <Label>Product Image</Label>
-                  <div className="flex gap-2 mb-3">
-                    <Button 
-                      type="button"
-                      variant={imageUploadMode === 'url' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setImageUploadMode('url')}
-                    >
-                      Paste Link
-                    </Button>
-                    <Button 
-                      type="button"
-                      variant={imageUploadMode === 'file' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setImageUploadMode('file')}
-                    >
-                      Upload File
-                    </Button>
+                  <div className="space-y-3">
+                    <div>
+                      <Label htmlFor="productFile" className="text-sm text-gray-600">Upload Image from Local Storage</Label>
+                      <Input
+                        ref={fileInputRef}
+                        id="productFile"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileSelect}
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Max 5MB - preview appears immediately</p>
+                    </div>
+
+                    <div className="border-t pt-3">
+                      <Label htmlFor="productUrl" className="text-sm text-gray-600">Or Use Image URL</Label>
+                      <Input
+                        id="productUrl"
+                        placeholder="https://example.com/image.jpg"
+                        value={formData.image}
+                        onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+                      />
+                    </div>
                   </div>
-                  
-                  {imageUploadMode === 'url' ? (
-                    <Input
-                      placeholder="https://..."
-                      value={formData.image}
-                      onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-                    />
-                  ) : (
-                    <Input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                      disabled={imageUploading}
-                    />
-                  )}
                   
                   {formData.image && formData.image !== 'https://dummyimage.com/300x300/cccccc/969696?text=Product' && (
                     <div className="mt-4 border-2 border-gray-300 rounded-lg overflow-hidden shadow-md hover:shadow-lg transition-shadow">

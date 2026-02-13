@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,7 @@ import { useAuth } from '@/context/AuthContext';
 import { storage, db } from '@/lib/firebaseClient';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { collection, addDoc, Timestamp, doc, getDoc, updateDoc } from 'firebase/firestore';
-import { Plus, Upload, X } from 'lucide-react';
+import { X, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface ProductFormData {
@@ -29,9 +29,8 @@ const AddProduct: React.FC = () => {
   const [searchParams] = useSearchParams();
   const { user, profile } = useAuth();
   const [loading, setLoading] = useState(false);
-  const [imageUploading, setImageUploading] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
-  const [imageUploadMode, setImageUploadMode] = useState<'file' | 'url'>('file');
+  const [imageUploading, setImageUploading] = useState(false);
   const [urlInput, setUrlInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editId = searchParams.get('edit');
@@ -113,63 +112,6 @@ const AddProduct: React.FC = () => {
     }));
   };
 
-  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-
-    setImageUploading(true);
-    const uploadedImages: string[] = [];
-
-    try {
-      for (const file of Array.from(files)) {
-        // Check file size (max 5MB)
-        if (file.size > 5 * 1024 * 1024) {
-          toast.error(`File ${file.name} is too large. Max size is 5MB.`);
-          continue;
-        }
-
-        // Check file type
-        if (!file.type.startsWith('image/')) {
-          toast.error(`File ${file.name} is not an image.`);
-          continue;
-        }
-
-        try {
-          const fileExt = file.name.split('.').pop();
-          const fileName = `product-images/${user?.uid}/${Date.now()}-${Math.random()}.${fileExt}`;
-
-          // Upload to Firebase Storage
-          const fileRef = ref(storage, fileName);
-          await uploadBytes(fileRef, file);
-
-          // Get download URL
-          const downloadURL = await getDownloadURL(fileRef);
-          uploadedImages.push(downloadURL);
-        } catch (uploadError) {
-          console.error(`Error uploading ${file.name}:`, uploadError);
-          toast.error(`Failed to upload ${file.name}`);
-        }
-      }
-
-      if (uploadedImages.length > 0) {
-        setFormData(prev => ({
-          ...prev,
-          images: [...prev.images, ...uploadedImages]
-        }));
-        toast.success(`${uploadedImages.length} image(s) uploaded successfully`);
-      }
-    } catch (error) {
-      console.error('Error uploading images:', error);
-      toast.error('Failed to upload images');
-    } finally {
-      // Reset the file input to allow re-selecting the same files
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      setImageUploading(false);
-    }
-  };
-
   const removeImage = (index: number) => {
     setFormData(prev => ({
       ...prev,
@@ -213,6 +155,41 @@ const AddProduct: React.FC = () => {
     }));
   };
 
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    for (const file of Array.from(files)) {
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error(`File ${file.name} is too large. Max size is 5MB.`);
+        continue;
+      }
+
+      if (!file.type.startsWith('image/')) {
+        toast.error(`File ${file.name} is not an image.`);
+        continue;
+      }
+
+      // Create local preview using FileReader
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const dataUrl = e.target?.result as string;
+        setFormData(prev => ({
+          ...prev,
+          images: [...prev.images, dataUrl]
+        }));
+        toast.success(`Image preview added for ${file.name}`);
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -251,13 +228,42 @@ const AddProduct: React.FC = () => {
     setLoading(true);
 
     try {
+      // Handle image uploads - convert data URLs to Firebase URLs
+      const uploadedImages: string[] = [];
+      for (const image of formData.images) {
+        // Check if it's a data URL (local file) or regular URL
+        if (image.startsWith('data:')) {
+          try {
+            // Convert data URL to blob
+            const response = await fetch(image);
+            const blob = await response.blob();
+            
+            // Upload to Firebase Storage
+            const fileName = `product-images/${user.uid}/${Date.now()}-${Math.random().toString(36).substr(2, 9)}.jpg`;
+            const fileRef = ref(storage, fileName);
+            await uploadBytes(fileRef, blob);
+            
+            // Get download URL
+            const downloadURL = await getDownloadURL(fileRef);
+            uploadedImages.push(downloadURL);
+          } catch (uploadError) {
+            console.error('Error uploading image:', uploadError);
+            toast.error('Failed to upload one of the images. Using preview instead.');
+            uploadedImages.push(image); // Fallback to data URL if upload fails
+          }
+        } else {
+          // Regular URL, use as-is
+          uploadedImages.push(image);
+        }
+      }
+
       const productData = {
         title: formData.title.trim(),
         description: formData.description.trim(),
         price: formData.price,
         stock: formData.stock,
         category: formData.category,
-        images: formData.images,
+        images: uploadedImages,
         tags: formData.tags,
         status: profile?.role === 'admin' ? 'approved' : 'pending',
         ...(isEdit ? { updated_at: Timestamp.now() } : { 
@@ -428,64 +434,40 @@ const AddProduct: React.FC = () => {
                   <CardContent>
                     <div className="space-y-4">
                       <div>
-                        <Label>Image Upload Method</Label>
-                        <div className="flex gap-2 mb-3">
+                        <Label htmlFor="imageFile">Upload Images from Local Storage</Label>
+                        <Input
+                          ref={fileInputRef}
+                          id="imageFile"
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          onChange={handleFileSelect}
+                        />
+                        <p className="text-sm text-gray-500 mt-1">
+                          Select multiple images (max 5MB each) - previews appear immediately
+                        </p>
+                      </div>
+
+                      <div className="border-t pt-4">
+                        <Label htmlFor="imageUrl">Or Add Images via URL</Label>
+                        <p className="text-sm text-gray-500 mb-2">Paste direct image URLs below</p>
+                        <div className="flex gap-2">
+                          <Input
+                            id="imageUrl"
+                            placeholder="https://example.com/image.jpg"
+                            value={urlInput}
+                            onChange={(e) => setUrlInput(e.target.value)}
+                            onKeyPress={(e) => e.key === 'Enter' && handleAddImageUrl()}
+                          />
                           <Button
                             type="button"
-                            variant={imageUploadMode === 'file' ? 'default' : 'outline'}
-                            size="sm"
-                            onClick={() => setImageUploadMode('file')}
+                            onClick={handleAddImageUrl}
+                            disabled={!urlInput.trim()}
                           >
-                            Upload File
-                          </Button>
-                          <Button
-                            type="button"
-                            variant={imageUploadMode === 'url' ? 'default' : 'outline'}
-                            size="sm"
-                            onClick={() => setImageUploadMode('url')}
-                          >
-                            Paste Link
+                            Add
                           </Button>
                         </div>
                       </div>
-
-                      {imageUploadMode === 'file' ? (
-                        <div>
-                          <Label htmlFor="images">Upload Images</Label>
-                          <Input
-                            ref={fileInputRef}
-                            id="images"
-                            type="file"
-                            multiple
-                            accept="image/*"
-                            onChange={handleImageUpload}
-                            disabled={imageUploading}
-                          />
-                          <p className="text-sm text-gray-500 mt-1">
-                            Select multiple images (max 5MB each)
-                          </p>
-                        </div>
-                      ) : (
-                        <div>
-                          <Label htmlFor="imageUrl">Image URL</Label>
-                          <div className="flex gap-2">
-                            <Input
-                              id="imageUrl"
-                              placeholder="https://example.com/image.jpg"
-                              value={urlInput}
-                              onChange={(e) => setUrlInput(e.target.value)}
-                              onKeyPress={(e) => e.key === 'Enter' && handleAddImageUrl()}
-                            />
-                            <Button
-                              type="button"
-                              onClick={handleAddImageUrl}
-                              disabled={!urlInput.trim()}
-                            >
-                              Add
-                            </Button>
-                          </div>
-                        </div>
-                      )}
 
                       {/* Image Preview */}
                       {formData.images.length > 0 && (

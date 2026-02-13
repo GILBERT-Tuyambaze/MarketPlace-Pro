@@ -260,9 +260,7 @@ function ProductsTab({ user }: { user: any }) {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [imageUploadMode, setImageUploadMode] = useState<'file' | 'url'>('url');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [imageUploading, setImageUploading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     title: '',
@@ -317,38 +315,37 @@ function ProductsTab({ user }: { user: any }) {
     }
   };
 
-  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
 
-    setImageUploading(true);
-    try {
-      const file = files[0];
+    for (const file of Array.from(files)) {
       if (file.size > 5 * 1024 * 1024) {
-        alert('File is too large. Max size is 5MB.');
-        return;
+        alert(`File ${file.name} is too large. Max size is 5MB.`);
+        continue;
       }
 
       if (!file.type.startsWith('image/')) {
-        alert('File must be an image.');
-        return;
+        alert(`File ${file.name} is not an image.`);
+        continue;
       }
 
+      // Create local preview using FileReader
       const reader = new FileReader();
       reader.onload = (e) => {
-        const result = e.target?.result as string;
-        setFormData({ ...formData, image: result });
-        alert('Image selected');
+        const dataUrl = e.target?.result as string;
+        setFormData(prev => ({
+          ...prev,
+          image: dataUrl
+        }));
+        alert(`Image preview loaded for ${file.name}`);
       };
       reader.readAsDataURL(file);
-    } catch (error) {
-      console.error('Error handling image:', error);
-      alert('Failed to handle image');
-    } finally {
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-      setImageUploading(false);
+    }
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
@@ -440,40 +437,31 @@ function ProductsTab({ user }: { user: any }) {
               </div>
               <div className="col-span-2">
                 <label className="block text-sm font-medium">Product Image</label>
-                <div className="flex gap-2 mb-3">
-                  <button 
-                    type="button"
-                    className={`px-3 py-1 text-sm rounded ${imageUploadMode === 'url' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
-                    onClick={() => setImageUploadMode('url')}
-                  >
-                    Paste Link
-                  </button>
-                  <button 
-                    type="button"
-                    className={`px-3 py-1 text-sm rounded ${imageUploadMode === 'file' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
-                    onClick={() => setImageUploadMode('file')}
-                  >
-                    Upload File
-                  </button>
+                <div className="space-y-3">
+                  <div>
+                    <label htmlFor="productFile" className="text-sm text-gray-600">Upload Image from Local Storage</label>
+                    <input
+                      ref={fileInputRef}
+                      id="productFile"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileSelect}
+                      className="border w-full px-3 py-2 rounded"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Max 5MB - preview appears immediately</p>
+                  </div>
+
+                  <div className="border-t pt-3">
+                    <label htmlFor="productUrl" className="text-sm text-gray-600">Or Use Image URL</label>
+                    <input
+                      id="productUrl"
+                      placeholder="https://example.com/image.jpg"
+                      value={formData.image}
+                      onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+                      className="border w-full px-3 py-2 rounded"
+                    />
+                  </div>
                 </div>
-                
-                {imageUploadMode === 'url' ? (
-                  <input
-                    placeholder="https://..."
-                    value={formData.image}
-                    onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-                    className="border w-full px-3 py-2 rounded"
-                  />
-                ) : (
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    disabled={imageUploading}
-                    className="border w-full px-3 py-2 rounded"
-                  />
-                )}
                 
                 {formData.image && formData.image !== 'https://dummyimage.com/300x300/cccccc/969696?text=Product' && (
                   <div className="mt-4 border-2 border-gray-300 rounded-lg overflow-hidden shadow-md hover:shadow-lg transition-shadow">
