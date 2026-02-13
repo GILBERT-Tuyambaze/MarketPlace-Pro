@@ -16,6 +16,8 @@ import Cart from './pages/Cart';
 import Checkout from './pages/Checkout';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import Orders from './pages/Orders';
 import Profile from './pages/Profile';
 import AdminLogin from './pages/AdminLogin';
@@ -52,6 +54,8 @@ const RootLayout = () => {
     '/admin/login',
     '/login',
     '/register',
+    '/forgot-password',
+    '/reset-password',
     '/seed-data',
     '/diagnostics'
   ];
@@ -79,6 +83,8 @@ const router = createBrowserRouter([
   { path: '/cart', element: <Cart /> },
   { path: '/login', element: <Login /> },
   { path: '/register', element: <Register /> },
+  { path: '/forgot-password', element: <ForgotPassword /> },
+  { path: '/reset-password', element: <ResetPassword /> },
   { path: '/admin/login', element: <AdminLogin /> },
   { path: '/seed-data', element: <SeedData /> },
   { path: '/diagnostics', element: <Diagnostics /> },
