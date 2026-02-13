@@ -56,35 +56,57 @@ const ProductDetailPage: React.FC = () => {
 
   const fetchProduct = useCallback(async () => {
     try {
-      const fbProduct = await fetchProductById(id || '');
+      if (!id) {
+        console.error('No product ID provided');
+        toast.error('Invalid product ID');
+        navigate('/products');
+        return;
+      }
+
+      console.log('Loading product with ID:', id);
+      const fbProduct = await fetchProductById(id);
       
       if (!fbProduct) {
+        console.error('Product returned null for ID:', id);
         toast.error('Product not found');
         navigate('/products');
         setLoading(false);
         return;
       }
 
+      console.log('Product loaded successfully:', fbProduct);
       setProduct(fbProduct);
 
       // Fetch comments
-      const productComments = await Customer.fetchProductComments(id || '');
-      setComments(productComments);
+      try {
+        const productComments = await Customer.fetchProductComments(id);
+        setComments(productComments);
+      } catch (commentError) {
+        console.error('Error fetching comments:', commentError);
+      }
 
       // Fetch similar products
-      const similar = await Customer.getSimilarProducts(id || '', fbProduct.category);
-      setSimilarProducts(similar);
+      try {
+        const similar = await Customer.getSimilarProducts(id, fbProduct.category);
+        setSimilarProducts(similar);
+      } catch (similarError) {
+        console.error('Error fetching similar products:', similarError);
+      }
 
       // Check if product is saved/loved
       if (user) {
-        const saved = await Customer.isProductSaved(id || '', user.uid);
-        const loved = await Customer.isProductLoved(id || '', user.uid);
-        setIsSaved(saved);
-        setIsLoved(loved);
+        try {
+          const saved = await Customer.isProductSaved(id, user.uid);
+          const loved = await Customer.isProductLoved(id, user.uid);
+          setIsSaved(saved);
+          setIsLoved(loved);
+        } catch (statusError) {
+          console.error('Error checking product save/love status:', statusError);
+        }
       }
     } catch (error) {
       console.error('Error fetching product:', error);
-      toast.error('Failed to load product');
+      toast.error('Failed to load product. Please try again.');
       navigate('/products');
     } finally {
       setLoading(false);

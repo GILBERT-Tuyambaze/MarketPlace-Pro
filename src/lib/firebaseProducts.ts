@@ -38,18 +38,15 @@ export const fetchProducts = async (
   limitCount: number = 100
 ): Promise<FirebaseProduct[]> => {
   try {
-    // Start with approved products only (no composite index needed)
-    const constraints: QueryConstraint[] = [
-      where('status', '==', 'approved'),
-      limit(limitCount),
-    ];
+    // Fetch all products (including those not yet approved) for testing
+    const constraints: QueryConstraint[] = [limit(limitCount)];
 
     const q = query(collection(db, 'products'), ...constraints);
     const snapshot = await getDocs(q);
     
     const products: FirebaseProduct[] = [];
-    for (const doc of snapshot.docs) {
-      const data = doc.data();
+    for (const docSnap of snapshot.docs) {
+      const data = docSnap.data();
       
       // Apply search filter if provided
       if (searchQuery) {
@@ -65,7 +62,7 @@ export const fetchProducts = async (
       }
 
       products.push({
-        id: doc.id,
+        id: docSnap.id,
         name: data.name || data.title || '',
         title: data.title || data.name || '',
         description: data.description || '',
@@ -96,6 +93,7 @@ export const fetchProducts = async (
       });
     }
 
+    console.log('Fetched products:', products.length, products.map(p => ({ id: p.id, name: p.name })));
     return products;
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -106,14 +104,23 @@ export const fetchProducts = async (
 // Fetch product by ID
 export const fetchProductById = async (productId: string): Promise<FirebaseProduct | null> => {
   try {
+    if (!productId || productId.trim() === '') {
+      console.error('Invalid product ID:', productId);
+      return null;
+    }
+
+    console.log('Fetching product with ID:', productId);
     const docRef = doc(db, 'products', productId);
     const snapshot = await getDoc(docRef);
 
     if (!snapshot.exists()) {
+      console.error('Product not found in Firestore for ID:', productId);
       return null;
     }
 
     const data = snapshot.data();
+    console.log('Product data retrieved:', data);
+
     return {
       id: snapshot.id,
       name: data.name || data.title || '',
@@ -132,7 +139,7 @@ export const fetchProductById = async (productId: string): Promise<FirebaseProdu
       created_at: data.created_at,
     };
   } catch (error) {
-    console.error('Error fetching product by ID:', error);
+    console.error('Error fetching product by ID:', error, 'ID:', productId);
     return null;
   }
 };

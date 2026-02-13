@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,6 +14,7 @@ import type { FirebaseProduct } from '@/lib/firebaseProducts';
 
 const ProductsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [products, setProducts] = useState<FirebaseProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -102,11 +103,24 @@ const ProductsPage: React.FC = () => {
 
   const handleAddToCart = async (productId: string) => {
     try {
-      await addToCart(productId);
+      addToCart(productId, 1);
       toast.success('Added to cart!');
     } catch (error) {
-      toast.error('Failed to add to cart. Please login first.');
+      console.error('Error adding to cart:', error);
+      toast.error('Failed to add to cart');
     }
+  };
+
+  const handleProductClick = (productId: string, e?: React.MouseEvent) => {
+    // Don't navigate if clicking the add to cart button
+    if (e?.target instanceof HTMLElement && (
+      e.target.closest('button') || 
+      e.target.closest('a')
+    )) {
+      e.preventDefault();
+      return;
+    }
+    navigate(`/products/${productId}`);
   };
 
   const formatPrice = (price: number) => {
@@ -241,7 +255,11 @@ const ProductsPage: React.FC = () => {
             'space-y-4'
           }>
             {products.map((product) => (
-              <Card key={product.id} className="group hover:shadow-lg transition-all duration-300">
+              <Card 
+                key={product.id} 
+                className="group hover:shadow-lg transition-all duration-300 cursor-pointer"
+                onClick={(e) => handleProductClick(product.id, e)}
+              >
                 {viewMode === 'grid' ? (
                   <>
                     <div className="relative overflow-hidden rounded-t-lg">
@@ -262,9 +280,7 @@ const ProductsPage: React.FC = () => {
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between mb-2">
                         <h3 className="font-semibold text-gray-900 line-clamp-2 group-hover:text-blue-600 transition-colors">
-                          <Link to={`/products/${product.id}`}>
-                            {product.name}
-                          </Link>
+                          {product.name}
                         </h3>
                       </div>
                       <p className="text-sm text-gray-600 mb-3 line-clamp-2">
@@ -315,9 +331,7 @@ const ProductsPage: React.FC = () => {
                       <div className="flex-1">
                         <div className="flex items-start justify-between mb-2">
                           <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
-                            <Link to={`/products/${product.id}`}>
-                              {product.name}
-                            </Link>
+                            {product.name}
                           </h3>
                           <Badge variant="secondary">{product.category}</Badge>
                         </div>
