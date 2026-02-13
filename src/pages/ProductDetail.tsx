@@ -153,11 +153,12 @@ const ProductDetailPage: React.FC = () => {
           {/* Product Images */}
           <div className="space-y-4">
             <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg overflow-hidden">
-              <img 
+              <img
                 src={product.image}
                 alt={product.name}
                 className="w-full h-full object-cover"
-                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                loading="lazy"
+                onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://via.placeholder.com/600?text=Image+Unavailable'; }}
               />
             </div>
           </div>

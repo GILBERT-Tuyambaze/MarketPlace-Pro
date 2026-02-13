@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Layout from '@/components/Layout/Layout';
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebaseClient';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, updateDoc, doc, getDoc, Timestamp } from 'firebase/firestore';
 import { Package, Eye, Clock, CheckCircle, XCircle, Truck } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -49,7 +49,7 @@ const OrdersPage: React.FC = () => {
     if (user) {
       fetchOrders();
     }
-  }, [user, activeTab]);
+  }, [user, activeTab, profile]);
 
   const fetchOrders = async () => {
     if (!user) return;
@@ -58,13 +58,17 @@ const OrdersPage: React.FC = () => {
     try {
       const ordersRef = collection(db, 'orders');
       
-      // Query orders for current user (using user_id field from checkout)
-      const q = query(
-        ordersRef,
-        where('user_id', '==', user.uid)
-      );
+      // If seller, query orders that include their seller id
+      let querySnapshot;
+      if (profile?.role === 'seller') {
+        const q = query(ordersRef, where('sellers', 'array-contains', profile.id));
+        querySnapshot = await getDocs(q);
+      } else {
+        // Query orders for current user (using user_id field from checkout)
+        const q = query(ordersRef, where('user_id', '==', user.uid));
+        querySnapshot = await getDocs(q);
+      }
 
-      const querySnapshot = await getDocs(q);
       let fetchedOrders = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
@@ -88,7 +92,30 @@ const OrdersPage: React.FC = () => {
         }
       }
 
-      setOrders(fetchedOrders);
+      // Enrich items with product info when available (product name)
+      const enriched = await Promise.all(fetchedOrders.map(async (order) => {
+        const itemsWithDetails = await Promise.all(order.items.map(async (item: any) => {
+          try {
+            const pRef = doc(db, 'products', item.product_id);
+            const pSnap = await getDoc(pRef);
+            if (pSnap.exists()) {
+              const p = pSnap.data();
+              return {
+                ...item,
+                product_name: p.title || p.name || '',
+                product_image: p.images?.[0] || p.image || '',
+              };
+            }
+          } catch (err) {
+            console.error('Error fetching product for order item:', err);
+          }
+          return item;
+        }));
+
+        return { ...order, items: itemsWithDetails } as Order;
+      }));
+
+      setOrders(enriched);
     } catch (error) {
       console.error('Error fetching orders:', error);
       toast.error('Failed to load orders');
@@ -139,6 +166,37 @@ const OrdersPage: React.FC = () => {
         return <XCircle className="h-4 w-4" />;
       default:
         return <Package className="h-4 w-4" />;
+    }
+  };
+
+  const updateItemStatus = async (orderId: string, itemIndex: number, newStatus: string) => {
+    try {
+      const orderRef = doc(db, 'orders', orderId);
+      const orderSnap = await getDoc(orderRef);
+      if (!orderSnap.exists()) {
+        toast.error('Order not found');
+        return;
+      }
+
+      const data: any = orderSnap.data();
+      const items = Array.isArray(data.items) ? data.items : [];
+      if (itemIndex < 0 || itemIndex >= items.length) {
+        toast.error('Invalid item index');
+        return;
+      }
+
+      items[itemIndex] = { ...items[itemIndex], status: newStatus };
+
+      await updateDoc(orderRef, {
+        items,
+        updated_at: Timestamp.now(),
+      });
+
+      toast.success('Item status updated');
+      fetchOrders();
+    } catch (err) {
+      console.error('Error updating item status:', err);
+      toast.error('Failed to update item status');
     }
   };
 
@@ -242,13 +300,31 @@ const OrdersPage: React.FC = () => {
                       <div className="border-t pt-4">
                         <p className="font-medium text-gray-900 mb-3">Items ({order.items.length})</p>
                         <div className="space-y-2">
-                          {order.items.map((item, idx) => (
+                          {order.items.map((item: any, idx: number) => (
                             <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                              <div>
-                                <p className="text-sm font-medium">{item.product_id}</p>
-                                <p className="text-xs text-gray-500">Quantity: {item.quantity}</p>
+                              <div className="flex items-center gap-3">
+                                {item.product_image && (
+                                  <img src={item.product_image} alt={item.product_name || ''} className="h-12 w-12 object-cover rounded" />
+                                )}
+                                <div>
+                                  <p className="text-sm font-medium">{item.product_name || item.product_id}</p>
+                                  <p className="text-xs text-gray-500">Quantity: {item.quantity}</p>
+                                  <p className="text-xs text-gray-500">Status: <span className="capitalize">{item.status || 'processing'}</span></p>
+                                </div>
                               </div>
-                              <p className="font-medium">{formatPrice(item.price * item.quantity)}</p>
+
+                              <div className="flex items-center gap-3">
+                                <p className="font-medium">{formatPrice(item.price * item.quantity)}</p>
+
+                                {/* Seller / Admin actions: allow updating item status if this order item belongs to current seller or user is admin */}
+                                {(profile?.role === 'seller' && item.seller_id === profile.id) || profile?.role === 'admin' ? (
+                                  <div className="flex items-center gap-2">
+                                    <Button size="sm" onClick={() => updateItemStatus(order.id, idx, 'packed')}>Pack</Button>
+                                    <Button size="sm" onClick={() => updateItemStatus(order.id, idx, 'shipped')}>Ship</Button>
+                                    <Button size="sm" onClick={() => updateItemStatus(order.id, idx, 'delivered')}>Deliver</Button>
+                                  </div>
+                                ) : null}
+                              </div>
                             </div>
                           ))}
                         </div>

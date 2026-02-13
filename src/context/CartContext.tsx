@@ -22,7 +22,8 @@ interface CartItem {
     id: string;
     title: string;
     price: number;
-    images?: string[];
+      images?: string[];
+      seller_id?: string;
     stock: number;
   };
 }
@@ -111,6 +112,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
                   title: firebaseProduct.title || firebaseProduct.name || 'Untitled',
                   price: firebaseProduct.price || 0,
                   images: firebaseProduct.images || [firebaseProduct.image] || [],
+                  seller_id: firebaseProduct.seller_id || firebaseProduct.sellerId || '',
                   stock: firebaseProduct.stock || 0,
                 },
               });

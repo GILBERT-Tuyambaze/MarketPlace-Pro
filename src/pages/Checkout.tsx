@@ -65,13 +65,22 @@ const CheckoutPage: React.FC = () => {
       }
 
       // Create order in Firestore
+      // Build order items including seller association and per-item status
+      const orderItems = items.map(item => ({
+        product_id: item.product_id,
+        quantity: item.quantity,
+        price: item.product.price,
+        seller_id: (item.product as any).seller_id || '',
+        status: 'processing', // per-item status
+      }));
+
+      // Unique sellers involved in this order (for seller queries)
+      const sellers = Array.from(new Set(orderItems.map(i => i.seller_id).filter(Boolean)));
+
       const orderData = {
         user_id: user.uid,
-        items: items.map(item => ({
-          product_id: item.product_id,
-          quantity: item.quantity,
-          price: item.product.price,
-        })),
+        items: orderItems,
+        sellers,
         shippingInfo,
         totalAmount: getTotalPrice(),
         status: 'pending',

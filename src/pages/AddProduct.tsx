@@ -430,6 +430,8 @@ const AddProduct: React.FC = () => {
                               <img
                                 src={image}
                                 alt={`Product ${index + 1}`}
+                                loading="lazy"
+                                onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://via.placeholder.com/300?text=Image+Unavailable'; }}
                                 className="w-full h-24 object-cover rounded-lg border"
                               />
                               <Button
