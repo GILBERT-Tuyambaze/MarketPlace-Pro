@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,12 +8,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import Layout from '@/components/Layout/Layout';
 import { useAuth } from '@/context/AuthContext';
-import { User, Settings, Shield, Bell } from 'lucide-react';
+import { fetchProductById } from '@/lib/firebaseProducts';
+import * as Customer from '@/lib/customer';
+import { User, Settings, Shield, Bell, Heart, Bookmark, Package } from 'lucide-react';
 import { toast } from 'sonner';
 
 const ProfilePage: React.FC = () => {
   const { user, profile, updateProfile } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [savedProducts, setSavedProducts] = useState<Customer.SavedProduct[]>([]);
+  const [lovedProducts, setLovedProducts] = useState<Customer.LovedProduct[]>([]);
+  const [savedProductsDetails, setSavedProductsDetails] = useState<any[]>([]);
+  const [lovedProductsDetails, setLovedProductsDetails] = useState<any[]>([]);
+  const [loadingSaved, setLoadingSaved] = useState(false);
+  const [loadingLoved, setLoadingLoved] = useState(false);
   const [formData, setFormData] = useState({
     full_name: profile?.full_name || '',
     phone: profile?.phone || '',
@@ -21,6 +30,79 @@ const ProfilePage: React.FC = () => {
 
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  useEffect(() => {
+    if (user?.uid) {
+      loadSavedProducts();
+      loadLovedProducts();
+    }
+  }, [user?.uid]);
+
+  const loadSavedProducts = async () => {
+    try {
+      setLoadingSaved(true);
+      const saved = await Customer.fetchSavedProducts(user!.uid);
+      setSavedProducts(saved);
+      
+      // Fetch product details for each saved product
+      const details = await Promise.all(
+        saved.map(sp => 
+          fetchProductById(sp.product_id).catch(() => null)
+        )
+      );
+      setSavedProductsDetails(details.filter(d => d !== null));
+    } catch (error) {
+      console.error('Error loading saved products:', error);
+      toast.error('Failed to load saved products');
+    } finally {
+      setLoadingSaved(false);
+    }
+  };
+
+  const loadLovedProducts = async () => {
+    try {
+      setLoadingLoved(true);
+      const loved = await Customer.fetchLovedProducts(user!.uid);
+      setLovedProducts(loved);
+      
+      // Fetch product details for each loved product
+      const details = await Promise.all(
+        loved.map(lp => 
+          fetchProductById(lp.product_id).catch(() => null)
+        )
+      );
+      setLovedProductsDetails(details.filter(d => d !== null));
+    } catch (error) {
+      console.error('Error loading loved products:', error);
+      toast.error('Failed to load loved products');
+    } finally {
+      setLoadingLoved(false);
+    }
+  };
+
+  const handleRemoveSaved = async (productId: string) => {
+    try {
+      await Customer.unsaveProduct(user!.uid, productId);
+      setSavedProducts(prev => prev.filter(p => p.product_id !== productId));
+      setSavedProductsDetails(prev => prev.filter(p => p.id !== productId));
+      toast.success('Product removed from saved');
+    } catch (error) {
+      console.error('Error removing saved product:', error);
+      toast.error('Failed to remove product');
+    }
+  };
+
+  const handleRemoveLoved = async (productId: string) => {
+    try {
+      await Customer.unloveProduct(user!.uid, productId);
+      setLovedProducts(prev => prev.filter(p => p.product_id !== productId));
+      setLovedProductsDetails(prev => prev.filter(p => p.id !== productId));
+      toast.success('Product removed from loved');
+    } catch (error) {
+      console.error('Error removing loved product:', error);
+      toast.error('Failed to remove product');
+    }
   };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
@@ -81,8 +163,10 @@ const ProfilePage: React.FC = () => {
           </div>
 
           <Tabs defaultValue="profile" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-6">
               <TabsTrigger value="profile">Profile</TabsTrigger>
+              <TabsTrigger value="saved">Saved Products</TabsTrigger>
+              <TabsTrigger value="loved">Loved Products</TabsTrigger>
               <TabsTrigger value="account">Account</TabsTrigger>
               <TabsTrigger value="security">Security</TabsTrigger>
               <TabsTrigger value="notifications">Notifications</TabsTrigger>
@@ -200,7 +284,155 @@ const ProfilePage: React.FC = () => {
               </div>
             </TabsContent>
 
-            {/* Account Tab */}
+            {/* Saved Products Tab */}
+            <TabsContent value="saved">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Bookmark className="h-5 w-5 mr-2" />
+                    Saved Products
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {loadingSaved ? (
+                    <div className="text-center py-12">
+                      <p className="text-gray-500">Loading saved products...</p>
+                    </div>
+                  ) : savedProductsDetails.length === 0 ? (
+                    <div className="text-center py-12">
+                      <Bookmark className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-gray-500 mb-3">No saved products yet</p>
+                      <Link to="/products">
+                        <Button>Browse Products</Button>
+                      </Link>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {savedProductsDetails.map((product) => (
+                        <div key={product.id} className="border rounded-lg overflow-hidden hover:shadow-lg transition-shadow">
+                          <Link to={`/products/${product.id}`}>
+                            <div className="aspect-square bg-gray-100 overflow-hidden">
+                              {product.image ? (
+                                <img
+                                  src={product.image}
+                                  alt={product.name}
+                                  className="w-full h-full object-cover hover:scale-105 transition-transform"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <Package className="h-8 w-8 text-gray-300" />
+                                </div>
+                              )}
+                            </div>
+                          </Link>
+                          <div className="p-4">
+                            <Link to={`/products/${product.id}`}>
+                              <h3 className="font-semibold text-sm line-clamp-2 hover:text-blue-600">
+                                {product.name}
+                              </h3>
+                            </Link>
+                            <p className="text-lg font-bold text-blue-600 mt-2">
+                              Rs {product.price?.toLocaleString('en-PK')}
+                            </p>
+                            <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
+                              <span>★ {(product.rating || 0).toFixed(1)}</span>
+                              {product.stock > 0 ? (
+                                <span className="text-green-600">In Stock</span>
+                              ) : (
+                                <span className="text-red-600">Out of Stock</span>
+                              )}
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full mt-3"
+                              onClick={() => handleRemoveSaved(product.id)}
+                            >
+                              Remove from Saved
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Loved Products Tab */}
+            <TabsContent value="loved">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Heart className="h-5 w-5 mr-2" />
+                    Loved Products
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {loadingLoved ? (
+                    <div className="text-center py-12">
+                      <p className="text-gray-500">Loading loved products...</p>
+                    </div>
+                  ) : lovedProductsDetails.length === 0 ? (
+                    <div className="text-center py-12">
+                      <Heart className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                      <p className="text-gray-500 mb-3">No loved products yet</p>
+                      <Link to="/products">
+                        <Button>Browse Products</Button>
+                      </Link>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {lovedProductsDetails.map((product) => (
+                        <div key={product.id} className="border rounded-lg overflow-hidden hover:shadow-lg transition-shadow">
+                          <Link to={`/products/${product.id}`}>
+                            <div className="aspect-square bg-gray-100 overflow-hidden">
+                              {product.image ? (
+                                <img
+                                  src={product.image}
+                                  alt={product.name}
+                                  className="w-full h-full object-cover hover:scale-105 transition-transform"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <Package className="h-8 w-8 text-gray-300" />
+                                </div>
+                              )}
+                            </div>
+                          </Link>
+                          <div className="p-4">
+                            <Link to={`/products/${product.id}`}>
+                              <h3 className="font-semibold text-sm line-clamp-2 hover:text-blue-600">
+                                {product.name}
+                              </h3>
+                            </Link>
+                            <p className="text-lg font-bold text-blue-600 mt-2">
+                              Rs {product.price?.toLocaleString('en-PK')}
+                            </p>
+                            <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
+                              <span>★ {(product.rating || 0).toFixed(1)}</span>
+                              {product.stock > 0 ? (
+                                <span className="text-green-600">In Stock</span>
+                              ) : (
+                                <span className="text-red-600">Out of Stock</span>
+                              )}
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="w-full mt-3"
+                              onClick={() => handleRemoveLoved(product.id)}
+                            >
+                              Remove from Loved
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
             <TabsContent value="account">
               <Card>
                 <CardHeader>
