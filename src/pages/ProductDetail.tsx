@@ -4,12 +4,16 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import Layout from '@/components/Layout/Layout';
 import { useCart } from '@/context/CartContext';
 import { useAuth } from '@/context/AuthContext';
 import { fetchProductById } from '@/lib/firebaseProducts';
+import * as Customer from '@/lib/customer';
 import type { FirebaseProduct } from '@/lib/firebaseProducts';
+import type { ProductComment, ProductSummary } from '@/lib/customer';
 import { 
   ArrowLeft, 
   ShoppingCart, 
@@ -21,7 +25,11 @@ import {
   Truck,
   RotateCcw,
   Minus,
-  Plus
+  Plus,
+  User,
+  Bookmark,
+  MessageCircle,
+  AlertCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -33,7 +41,16 @@ const ProductDetailPage: React.FC = () => {
   const [quantity, setQuantity] = useState(1);
   const [selectedImage, setSelectedImage] = useState(0);
   const { addToCart, isInCart, getCartItemQuantity } = useCart();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+
+  // New state for reviews and products
+  const [comments, setComments] = useState<ProductComment[]>([]);
+  const [isSaved, setIsSaved] = useState(false);
+  const [isLoved, setIsLoved] = useState(false);
+  const [similarProducts, setSimilarProducts] = useState<ProductSummary[]>([]);
+  const [reviewText, setReviewText] = useState('');
+  const [reviewRating, setReviewRating] = useState(5);
+  const [submittingReview, setSubmittingReview] = useState(false);
 
  
 
@@ -49,6 +66,22 @@ const ProductDetailPage: React.FC = () => {
       }
 
       setProduct(fbProduct);
+
+      // Fetch comments
+      const productComments = await Customer.fetchProductComments(id || '');
+      setComments(productComments);
+
+      // Fetch similar products
+      const similar = await Customer.getSimilarProducts(id || '', fbProduct.category);
+      setSimilarProducts(similar);
+
+      // Check if product is saved/loved
+      if (user) {
+        const saved = await Customer.isProductSaved(id || '', user.uid);
+        const loved = await Customer.isProductLoved(id || '', user.uid);
+        setIsSaved(saved);
+        setIsLoved(loved);
+      }
     } catch (error) {
       console.error('Error fetching product:', error);
       toast.error('Failed to load product');
@@ -56,7 +89,7 @@ const ProductDetailPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [id, navigate]);
+  }, [id, navigate, user]);
 
    useEffect(() => {
     if (id) {
@@ -101,6 +134,85 @@ const ProductDetailPage: React.FC = () => {
     } else {
       navigator.clipboard.writeText(window.location.href);
       toast.success('Link copied to clipboard!');
+    }
+  };
+
+  const handleSaveProduct = async () => {
+    if (!user) {
+      navigate('/login', { state: { from: { pathname: `/products/${id}` } } });
+      return;
+    }
+
+    try {
+      if (isSaved) {
+        await Customer.unsaveProduct(id!, user.uid);
+        setIsSaved(false);
+        toast.success('Removed from saved products');
+      } else {
+        await Customer.saveProduct(id!, user.uid);
+        setIsSaved(true);
+        toast.success('Saved for later!');
+      }
+    } catch (error) {
+      console.error('Error toggling save:', error);
+      toast.error('Failed to save product');
+    }
+  };
+
+  const handleLoveProduct = async () => {
+    if (!user) {
+      navigate('/login', { state: { from: { pathname: `/products/${id}` } } });
+      return;
+    }
+
+    try {
+      if (isLoved) {
+        await Customer.unloveProduct(id!, user.uid);
+        setIsLoved(false);
+        toast.success('Removed from loved products');
+      } else {
+        await Customer.loveProduct(id!, user.uid);
+        setIsLoved(true);
+        toast.success('Added to loved products!');
+      }
+    } catch (error) {
+      console.error('Error toggling love:', error);
+      toast.error('Failed to update favorites');
+    }
+  };
+
+  const handleSubmitReview = async () => {
+    if (!user || !profile) {
+      navigate('/login', { state: { from: { pathname: `/products/${id}` } } });
+      return;
+    }
+
+    if (!reviewText.trim()) {
+      toast.error('Please write a review');
+      return;
+    }
+
+    try {
+      setSubmittingReview(true);
+      await Customer.submitProductReview(
+        id!,
+        user.uid,
+        profile.full_name || user.email || 'Anonymous',
+        reviewText,
+        reviewRating
+      );
+      toast.success('Review submitted!');
+      setReviewText('');
+      setReviewRating(5);
+      
+      // Refresh comments
+      const updated = await Customer.fetchProductComments(id!);
+      setComments(updated);
+    } catch (error) {
+      console.error('Error submitting review:', error);
+      toast.error('Failed to submit review');
+    } finally {
+      setSubmittingReview(false);
     }
   };
 
@@ -193,10 +305,14 @@ const ProductDetailPage: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600">Sold by</p>
-                  <p className="font-semibold text-gray-900">{product.seller_name}</p>
+                  <a href={`/seller/${product.seller_id}`} className="font-semibold text-gray-900 hover:text-blue-600">
+                    {product.seller_name}
+                  </a>
                 </div>
-                <Button variant="outline" size="sm">
-                  View Store
+                <Button asChild variant="outline" size="sm">
+                  <Link to={`/seller/${product.seller_id}`}>
+                    View Store
+                  </Link>
                 </Button>
               </div>
             </Card>
@@ -278,9 +394,22 @@ const ProductDetailPage: React.FC = () => {
               </Button>
 
               <div className="flex gap-3">
-                <Button variant="outline" size="lg" className="flex-1">
-                  <Heart className="h-5 w-5 mr-2" />
-                  Save for Later
+                <Button 
+                  variant={isSaved ? 'default' : 'outline'} 
+                  size="lg" 
+                  className="flex-1"
+                  onClick={handleSaveProduct}
+                >
+                  <Bookmark className={`h-5 w-5 mr-2 ${isSaved ? 'fill-current' : ''}`} />
+                  {isSaved ? 'Saved' : 'Save for Later'}
+                </Button>
+                <Button 
+                  variant={isLoved ? 'default' : 'outline'} 
+                  size="lg"
+                  onClick={handleLoveProduct}
+                  className={isLoved ? 'bg-red-600 hover:bg-red-700' : ''}
+                >
+                  <Heart className={`h-5 w-5 ${isLoved ? 'fill-current' : ''}`} />
                 </Button>
                 <Button variant="outline" size="lg" onClick={handleShare}>
                   <Share2 className="h-5 w-5" />
@@ -322,10 +451,181 @@ const ProductDetailPage: React.FC = () => {
 
         {/* Related Products Section */}
         <div className="mt-16">
-          <h2 className="text-2xl font-bold text-gray-900 mb-8">You might also like</h2>
-          <div className="text-center py-8 text-gray-500">
-            <p>Related products will be displayed here</p>
-          </div>
+          <Tabs defaultValue="similar" className="w-full">
+            <TabsList>
+              <TabsTrigger value="similar">Similar Products</TabsTrigger>
+              <TabsTrigger value="reviews">Reviews & Ratings ({comments.length})</TabsTrigger>
+            </TabsList>
+
+            {/* Similar Products Tab */}
+            <TabsContent value="similar">
+              {similarProducts.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p>No similar products found</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {similarProducts.map((sim) => (
+                    <Link key={sim.id} to={`/products/${sim.id}`}>
+                      <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer">
+                        <div className="h-48 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden rounded-t-lg">
+                          <img
+                            src={sim.image}
+                            alt={sim.name}
+                            className="w-full h-full object-cover hover:scale-105 transition-transform"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).src =
+                                'https://via.placeholder.com/300?text=Image+Not+Found';
+                            }}
+                          />
+                        </div>
+                        <CardContent className="p-4">
+                          <h3 className="font-semibold text-gray-900 line-clamp-2 mb-2 group-hover:text-blue-600">
+                            {sim.name}
+                          </h3>
+                          <div className="flex items-center justify-between">
+                            <span className="text-lg font-bold text-blue-600">
+                              ${sim.price.toFixed(2)}
+                            </span>
+                            <div className="flex items-center">
+                              <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                              <span className="text-sm text-gray-600 ml-1">
+                                {sim.rating || 0}
+                              </span>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Reviews Tab */}
+            <TabsContent value="reviews" className="space-y-6">
+              {/* Write Review Form */}
+              {user ? (
+                <Card>
+                  <CardContent className="p-6">
+                    <h3 className="text-lg font-semibold mb-4">Write a Review</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Rating
+                        </label>
+                        <div className="flex gap-2">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              onClick={() => setReviewRating(star)}
+                              className="focus:outline-none"
+                            >
+                              <Star
+                                className={`h-8 w-8 cursor-pointer transition ${
+                                  star <= reviewRating
+                                    ? 'fill-yellow-400 text-yellow-400'
+                                    : 'text-gray-300'
+                                }`}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Your Review
+                        </label>
+                        <Textarea
+                          value={reviewText}
+                          onChange={(e) => setReviewText(e.target.value)}
+                          placeholder="Share your experience with this product..."
+                          className="min-h-32"
+                        />
+                      </div>
+
+                      <Button
+                        onClick={handleSubmitReview}
+                        disabled={submittingReview || !reviewText.trim()}
+                        className="bg-blue-600 hover:bg-blue-700"
+                      >
+                        {submittingReview ? 'Submitting...' : 'Submit Review'}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Alert>
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    <Link to="/login" className="font-semibold text-blue-600 hover:underline">
+                      Sign in
+                    </Link>
+                    {' '}to write a review
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Reviews List */}
+              {comments.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <MessageCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p>No reviews yet. Be the first to review!</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {comments.map((comment) => (
+                    <Card key={comment.id}>
+                      <CardContent className="p-6">
+                        <div className="flex items-start justify-between mb-4">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <User className="h-4 w-4 text-gray-400" />
+                              <p className="font-semibold text-gray-900">
+                                {comment.user_name}
+                              </p>
+                            </div>
+                            <p className="text-sm text-gray-500">
+                              {comment.created_at?.toDate().toLocaleDateString()}
+                            </p>
+                          </div>
+                          <div className="flex items-center">
+                            {[...Array(5)].map((_, i) => (
+                              <Star
+                                key={i}
+                                className={`h-4 w-4 ${
+                                  i < comment.rating
+                                    ? 'fill-yellow-400 text-yellow-400'
+                                    : 'text-gray-300'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                        <p className="text-gray-700 mb-4">{comment.comment}</p>
+
+                        {/* Replies */}
+                        {comment.replies && comment.replies.length > 0 && (
+                          <div className="mt-4 pt-4 border-t space-y-3">
+                            {comment.replies.map((reply) => (
+                              <div key={reply.id} className="bg-gray-50 p-3 rounded">
+                                <p className="font-semibold text-sm text-gray-900">
+                                  {reply.user_name}
+                                </p>
+                                <p className="text-sm text-gray-700 mt-1">{reply.reply}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
     </Layout>
