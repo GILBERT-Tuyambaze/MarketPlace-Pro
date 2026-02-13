@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Layout from '@/components/Layout/Layout';
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebaseClient';
-import { collection, query, where, getDocs, updateDoc, doc, getDoc, Timestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, updateDoc, doc, getDoc, Timestamp, addDoc } from 'firebase/firestore';
 import { Package, Eye, Clock, CheckCircle, XCircle, Truck } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -46,9 +46,74 @@ const OrdersPage: React.FC = () => {
   const { user, profile } = useAuth();
 
   useEffect(() => {
-    if (user) {
-      fetchOrders();
-    }
+    let unsubscribe: (() => void) | undefined;
+    if (!user) return;
+
+    const setup = async () => {
+      try {
+        const ordersRef = collection(db, 'orders');
+        let q;
+        if (profile?.role === 'seller') {
+          q = query(ordersRef, where('sellers', 'array-contains', profile.id));
+        } else {
+          q = query(ordersRef, where('user_id', '==', user.uid));
+        }
+
+        unsubscribe = onSnapshot(q, async (snapshot) => {
+          let fetchedOrders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Order[];
+
+          // Sort client-side
+          fetchedOrders.sort((a, b) => {
+            const aTime = a.created_at?.toMillis?.() || a.created_at || 0;
+            const bTime = b.created_at?.toMillis?.() || b.created_at || 0;
+            return bTime - aTime;
+          });
+
+          // Apply status filter
+          if (activeTab !== 'all') {
+            if (activeTab === 'pending') {
+              fetchedOrders = fetchedOrders.filter(order => order.status === 'pending');
+            } else if (activeTab === 'shipped') {
+              fetchedOrders = fetchedOrders.filter(order => order.status === 'shipped');
+            } else if (activeTab === 'delivered') {
+              fetchedOrders = fetchedOrders.filter(order => order.status === 'delivered');
+            }
+          }
+
+          // Enrich items with product info
+          const enriched = await Promise.all(fetchedOrders.map(async (order) => {
+            const itemsWithDetails = await Promise.all(order.items.map(async (item: any) => {
+              try {
+                const pRef = doc(db, 'products', item.product_id);
+                const pSnap = await getDoc(pRef);
+                if (pSnap.exists()) {
+                  const p = pSnap.data();
+                  return { ...item, product_name: p.title || p.name || '', product_image: p.images?.[0] || p.image || '' };
+                }
+              } catch (err) {
+                console.error('Error fetching product for order item:', err);
+              }
+              return item;
+            }));
+            return { ...order, items: itemsWithDetails } as Order;
+          }));
+
+          setOrders(enriched);
+          setLoading(false);
+        }, (err) => {
+          console.error('Orders listener error:', err);
+          toast.error('Failed to load orders');
+          setLoading(false);
+        });
+      } catch (err) {
+        console.error('Error setting up orders listener:', err);
+        setLoading(false);
+      }
+    };
+
+    setup();
+
+    return () => { if (unsubscribe) unsubscribe(); };
   }, [user, activeTab, profile]);
 
   const fetchOrders = async () => {
@@ -185,15 +250,28 @@ const OrdersPage: React.FC = () => {
         return;
       }
 
+      const prevStatus = items[itemIndex].status || 'processing';
       items[itemIndex] = { ...items[itemIndex], status: newStatus };
 
-      await updateDoc(orderRef, {
-        items,
-        updated_at: Timestamp.now(),
-      });
+      // Update order items and updated_at
+      await updateDoc(orderRef, { items, updated_at: Timestamp.now() });
+
+      // Write history entry under orders/{orderId}/history so buyer/admin/editor/seller can see timeline
+      try {
+        await addDoc(collection(db, 'orders', orderId, 'history'), {
+          item_index: itemIndex,
+          product_id: items[itemIndex].product_id,
+          previous_status: prevStatus,
+          new_status: newStatus,
+          changed_by: profile?.id || user.uid || 'unknown',
+          changed_by_role: profile?.role || 'user',
+          created_at: Timestamp.now(),
+        });
+      } catch (hErr) {
+        console.error('Failed to write order history entry:', hErr);
+      }
 
       toast.success('Item status updated');
-      fetchOrders();
     } catch (err) {
       console.error('Error updating item status:', err);
       toast.error('Failed to update item status');

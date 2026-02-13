@@ -80,6 +80,17 @@ async function main() {
         committed += chunk.length;
         console.log(`Committed ${committed}/${updates.length}`);
       }
+      // Append safety log file with updated order ids
+      try {
+        const logPath = path.resolve(process.cwd(), 'scripts', 'migration-order-updates.log');
+        const timestamp = new Date().toISOString();
+        const updatedIds = updates.map(u => u.id);
+        const logEntry = { timestamp, count: updates.length, updatedIds };
+        fs.appendFileSync(logPath, JSON.stringify(logEntry) + '\n');
+        console.log('Wrote safety log to', logPath);
+      } catch (logErr) {
+        console.error('Failed to write safety log:', logErr);
+      }
     } else {
       // Dry-run: show sample of updates
       console.log('Dry-run: sample updates (first 5)');
