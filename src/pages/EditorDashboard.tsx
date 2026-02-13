@@ -400,7 +400,7 @@ function ProductsTab({ user }: { user: any }) {
                   className="border w-full px-3 py-2 rounded"
                 />
               </div>
-              <div>
+              <div className="col-span-2">
                 <label className="block text-sm font-medium">Image URL</label>
                 <input
                   placeholder="https://..."
@@ -408,6 +408,16 @@ function ProductsTab({ user }: { user: any }) {
                   onChange={(e) => setFormData({ ...formData, image: e.target.value })}
                   className="border w-full px-3 py-2 rounded"
                 />
+                {formData.image && (
+                  <div className="mt-3">
+                    <img 
+                      src={formData.image} 
+                      alt="Product preview" 
+                      className="w-full h-40 object-cover rounded border"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://dummyimage.com/300x300/cccccc/969696?text=Invalid+Image'; }}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           </div>

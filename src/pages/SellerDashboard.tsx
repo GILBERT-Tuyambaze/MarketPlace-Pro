@@ -586,13 +586,23 @@ const ProductsTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
                     onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })}
                   />
                 </div>
-                <div>
+                <div className="md:col-span-2">
                   <Label>Image URL</Label>
                   <Input
                     placeholder="https://..."
                     value={formData.image}
                     onChange={(e) => setFormData({ ...formData, image: e.target.value })}
                   />
+                  {formData.image && (
+                    <div className="mt-3">
+                      <img 
+                        src={formData.image} 
+                        alt="Product preview" 
+                        className="w-full h-40 object-cover rounded border"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://dummyimage.com/300x300/cccccc/969696?text=Invalid+Image'; }}
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="md:col-span-2">
                   <Label>Description</Label>
