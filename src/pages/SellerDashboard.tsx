@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -464,6 +464,9 @@ const ProductsTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [imageUploadMode, setImageUploadMode] = useState<'file' | 'url'>('url');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [imageUploading, setImageUploading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     title: '',
@@ -494,6 +497,10 @@ const ProductsTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
       toast.error('Please fill in required fields');
       return;
     }
+    if (!formData.image || formData.image === 'https://dummyimage.com/300x300/cccccc/969696?text=Product') {
+      toast.error('Please upload or enter an image');
+      return;
+    }
 
     try {
       await sellerLib.addSellerProduct(sellerId, formData);
@@ -515,6 +522,42 @@ const ProductsTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
     } catch (error) {
       console.error('Error adding product:', error);
       toast.error('Failed to add product');
+    }
+  };
+
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setImageUploading(true);
+    try {
+      const file = files[0];
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('File is too large. Max size is 5MB.');
+        return;
+      }
+
+      if (!file.type.startsWith('image/')) {
+        toast.error('File must be an image.');
+        return;
+      }
+
+      // Create local preview URL
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        setFormData({ ...formData, image: result });
+        toast.success('Image selected');
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error('Error handling image:', error);
+      toast.error('Failed to handle image');
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      setImageUploading(false);
     }
   };
 
@@ -587,13 +630,43 @@ const ProductsTab: React.FC<{ sellerId: string }> = ({ sellerId }) => {
                   />
                 </div>
                 <div className="md:col-span-2">
-                  <Label>Image URL</Label>
-                  <Input
-                    placeholder="https://..."
-                    value={formData.image}
-                    onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-                  />
-                  {formData.image && (
+                  <Label>Product Image</Label>
+                  <div className="flex gap-2 mb-3">
+                    <Button 
+                      type="button"
+                      variant={imageUploadMode === 'url' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setImageUploadMode('url')}
+                    >
+                      Paste Link
+                    </Button>
+                    <Button 
+                      type="button"
+                      variant={imageUploadMode === 'file' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setImageUploadMode('file')}
+                    >
+                      Upload File
+                    </Button>
+                  </div>
+                  
+                  {imageUploadMode === 'url' ? (
+                    <Input
+                      placeholder="https://..."
+                      value={formData.image}
+                      onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+                    />
+                  ) : (
+                    <Input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      disabled={imageUploading}
+                    />
+                  )}
+                  
+                  {formData.image && formData.image !== 'https://dummyimage.com/300x300/cccccc/969696?text=Product' && (
                     <div className="mt-3">
                       <img 
                         src={formData.image} 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import * as Editor from '../lib/editor';
 
@@ -260,6 +260,9 @@ function ProductsTab({ user }: { user: any }) {
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [imageUploadMode, setImageUploadMode] = useState<'file' | 'url'>('url');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [imageUploading, setImageUploading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     title: '',
@@ -311,6 +314,41 @@ function ProductsTab({ user }: { user: any }) {
     } catch (error) {
       console.error('Error adding product:', error);
       alert('Failed to add product');
+    }
+  };
+
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setImageUploading(true);
+    try {
+      const file = files[0];
+      if (file.size > 5 * 1024 * 1024) {
+        alert('File is too large. Max size is 5MB.');
+        return;
+      }
+
+      if (!file.type.startsWith('image/')) {
+        alert('File must be an image.');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        setFormData({ ...formData, image: result });
+        alert('Image selected');
+      };
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error('Error handling image:', error);
+      alert('Failed to handle image');
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      setImageUploading(false);
     }
   };
 
@@ -401,14 +439,43 @@ function ProductsTab({ user }: { user: any }) {
                 />
               </div>
               <div className="col-span-2">
-                <label className="block text-sm font-medium">Image URL</label>
-                <input
-                  placeholder="https://..."
-                  value={formData.image}
-                  onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-                  className="border w-full px-3 py-2 rounded"
-                />
-                {formData.image && (
+                <label className="block text-sm font-medium">Product Image</label>
+                <div className="flex gap-2 mb-3">
+                  <button 
+                    type="button"
+                    className={`px-3 py-1 text-sm rounded ${imageUploadMode === 'url' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
+                    onClick={() => setImageUploadMode('url')}
+                  >
+                    Paste Link
+                  </button>
+                  <button 
+                    type="button"
+                    className={`px-3 py-1 text-sm rounded ${imageUploadMode === 'file' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
+                    onClick={() => setImageUploadMode('file')}
+                  >
+                    Upload File
+                  </button>
+                </div>
+                
+                {imageUploadMode === 'url' ? (
+                  <input
+                    placeholder="https://..."
+                    value={formData.image}
+                    onChange={(e) => setFormData({ ...formData, image: e.target.value })}
+                    className="border w-full px-3 py-2 rounded"
+                  />
+                ) : (
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    disabled={imageUploading}
+                    className="border w-full px-3 py-2 rounded"
+                  />
+                )}
+                
+                {formData.image && formData.image !== 'https://dummyimage.com/300x300/cccccc/969696?text=Product' && (
                   <div className="mt-3">
                     <img 
                       src={formData.image} 

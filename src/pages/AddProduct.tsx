@@ -31,6 +31,8 @@ const AddProduct: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [imageUploading, setImageUploading] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
+  const [imageUploadMode, setImageUploadMode] = useState<'file' | 'url'>('file');
+  const [urlInput, setUrlInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editId = searchParams.get('edit');
   const [isEdit, setIsEdit] = useState(!!editId);
@@ -173,6 +175,25 @@ const AddProduct: React.FC = () => {
       ...prev,
       images: prev.images.filter((_, i) => i !== index)
     }));
+  };
+
+  const handleAddImageUrl = () => {
+    if (!urlInput.trim()) {
+      toast.error('Please enter an image URL');
+      return;
+    }
+
+    try {
+      new URL(urlInput); // Validate URL
+      setFormData(prev => ({
+        ...prev,
+        images: [...prev.images, urlInput.trim()]
+      }));
+      setUrlInput('');
+      toast.success('Image URL added');
+    } catch {
+      toast.error('Please enter a valid URL');
+    }
   };
 
   const addTag = () => {
@@ -407,20 +428,64 @@ const AddProduct: React.FC = () => {
                   <CardContent>
                     <div className="space-y-4">
                       <div>
-                        <Label htmlFor="images">Upload Images</Label>
-                        <Input
-                          ref={fileInputRef}
-                          id="images"
-                          type="file"
-                          multiple
-                          accept="image/*"
-                          onChange={handleImageUpload}
-                          disabled={imageUploading}
-                        />
-                        <p className="text-sm text-gray-500 mt-1">
-                          Select multiple images (max 5MB each)
-                        </p>
+                        <Label>Image Upload Method</Label>
+                        <div className="flex gap-2 mb-3">
+                          <Button
+                            type="button"
+                            variant={imageUploadMode === 'file' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setImageUploadMode('file')}
+                          >
+                            Upload File
+                          </Button>
+                          <Button
+                            type="button"
+                            variant={imageUploadMode === 'url' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setImageUploadMode('url')}
+                          >
+                            Paste Link
+                          </Button>
+                        </div>
                       </div>
+
+                      {imageUploadMode === 'file' ? (
+                        <div>
+                          <Label htmlFor="images">Upload Images</Label>
+                          <Input
+                            ref={fileInputRef}
+                            id="images"
+                            type="file"
+                            multiple
+                            accept="image/*"
+                            onChange={handleImageUpload}
+                            disabled={imageUploading}
+                          />
+                          <p className="text-sm text-gray-500 mt-1">
+                            Select multiple images (max 5MB each)
+                          </p>
+                        </div>
+                      ) : (
+                        <div>
+                          <Label htmlFor="imageUrl">Image URL</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              id="imageUrl"
+                              placeholder="https://example.com/image.jpg"
+                              value={urlInput}
+                              onChange={(e) => setUrlInput(e.target.value)}
+                              onKeyPress={(e) => e.key === 'Enter' && handleAddImageUrl()}
+                            />
+                            <Button
+                              type="button"
+                              onClick={handleAddImageUrl}
+                              disabled={!urlInput.trim()}
+                            >
+                              Add
+                            </Button>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Image Preview */}
                       {formData.images.length > 0 && (
