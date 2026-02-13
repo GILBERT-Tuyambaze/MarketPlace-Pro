@@ -264,12 +264,19 @@ const ProductsPage: React.FC = () => {
                   <>
                     <div className="relative overflow-hidden rounded-t-lg">
                       <div className="h-48 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
-                        <img 
-                          src={product.image} 
-                          alt={product.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                        />
+                        {product.image ? (
+                          <img 
+                            src={product.image} 
+                            alt={product.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://via.placeholder.com/400?text=Image+Not+Available'; }}
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center justify-center text-gray-400">
+                            <Package className="h-12 w-12 mb-2" />
+                            <span className="text-sm">No Image</span>
+                          </div>
+                        )}
                       </div>
                       <div className="absolute top-2 right-2">
                         <Badge variant="secondary" className="bg-white/90">
@@ -321,12 +328,16 @@ const ProductsPage: React.FC = () => {
                   <CardContent className="p-4">
                     <div className="flex gap-4">
                       <div className="w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <img 
-                          src={product.image} 
-                          alt={product.name}
-                          className="w-full h-full object-cover rounded-lg"
-                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                        />
+                        {product.image ? (
+                          <img 
+                            src={product.image} 
+                            alt={product.name}
+                            className="w-full h-full object-cover rounded-lg"
+                            onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://via.placeholder.com/100?text=No+Image'; }}
+                          />
+                        ) : (
+                          <Package className="h-8 w-8 text-gray-400" />
+                        )}
                       </div>
                       <div className="flex-1">
                         <div className="flex items-start justify-between mb-2">

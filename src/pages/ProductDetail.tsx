@@ -287,13 +287,20 @@ const ProductDetailPage: React.FC = () => {
           {/* Product Images */}
           <div className="space-y-4">
             <div className="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg overflow-hidden">
-              <img
-                src={product.image}
-                alt={product.name}
-                className="w-full h-full object-cover"
-                loading="lazy"
-                onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://via.placeholder.com/600?text=Image+Unavailable'; }}
-              />
+              {product.image ? (
+                <img
+                  src={product.image}
+                  alt={product.name}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://via.placeholder.com/600?text=Image+Unavailable'; }}
+                />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
+                  <Package className="h-20 w-20 mb-4" />
+                  <span className="text-lg">No Image Available</span>
+                </div>
+              )}
             </div>
           </div>
 
