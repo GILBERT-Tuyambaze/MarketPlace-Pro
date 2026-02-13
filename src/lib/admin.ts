@@ -252,6 +252,142 @@ export async function updateUserStatus(
   });
 }
 
+export async function changeUserRole(
+  userId: string,
+  newRole: string,
+  actorId: string,
+  reason?: string
+) {
+  const userRef = doc(db, 'profiles', userId);
+  await updateDoc(userRef, {
+    role: newRole,
+    role_updated_at: serverTimestamp(),
+    role_updated_by: actorId,
+    role_change_reason: reason || null,
+  });
+
+  await logActivity({
+    actor_id: actorId,
+    actor_role: 'admin',
+    action: 'user_role_changed',
+    target: { type: 'user', id: userId, new_role: newRole },
+  });
+}
+
+export async function approveSeller(
+  userId: string,
+  actorId: string
+) {
+  const userRef = doc(db, 'profiles', userId);
+  await updateDoc(userRef, {
+    role: 'seller',
+    seller_status: 'approved',
+    seller_approved_at: serverTimestamp(),
+    seller_approved_by: actorId,
+  });
+
+  await logActivity({
+    actor_id: actorId,
+    actor_role: 'admin',
+    action: 'seller_approved',
+    target: { type: 'user', id: userId },
+  });
+}
+
+export async function rejectSeller(
+  userId: string,
+  actorId: string,
+  reason?: string
+) {
+  const userRef = doc(db, 'profiles', userId);
+  await updateDoc(userRef, {
+    seller_status: 'rejected',
+    seller_rejected_at: serverTimestamp(),
+    seller_rejected_by: actorId,
+    seller_rejection_reason: reason || null,
+  });
+
+  await logActivity({
+    actor_id: actorId,
+    actor_role: 'admin',
+    action: 'seller_rejected',
+    target: { type: 'user', id: userId },
+  });
+}
+
+export async function getPendingSellerRequests() {
+  // Fetch users with role=seller and seller_status=pending or null
+  const q = query(
+    collection(db, 'profiles'),
+    where('role', '==', 'seller')
+  );
+  const snap = await getDocs(q);
+  const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  // Filter those with pending or no status
+  return docs.filter((u: any) => !u.seller_status || u.seller_status === 'pending');
+}
+
+// ============ 6. SITE SETTINGS & MAINTENANCE ============
+
+export async function getSiteSettings() {
+  const snap = await getDoc(doc(db, 'settings', 'site'));
+  if (!snap.exists()) {
+    return {
+      maintenance_mode: false,
+      maintenance_message: 'The website is currently under maintenance. Please check back soon.',
+      maintenance_enabled_at: null,
+      maintenance_enabled_by: null,
+    };
+  }
+  return snap.data();
+}
+
+export async function updateSiteSettings(
+  settings: {
+    maintenance_mode?: boolean;
+    maintenance_message?: string;
+  },
+  actorId?: string
+) {
+  const settingsRef = doc(db, 'settings', 'site');
+  const updates: any = {
+    ...settings,
+    last_updated_at: serverTimestamp(),
+  };
+
+  if (settings.maintenance_mode !== undefined) {
+    updates.maintenance_enabled_at = settings.maintenance_mode ? serverTimestamp() : null;
+    updates.maintenance_enabled_by = settings.maintenance_mode ? actorId : null;
+  }
+
+  await updateDoc(settingsRef, updates);
+
+  if (actorId) {
+    await logActivity({
+      actor_id: actorId,
+      actor_role: 'admin',
+      action: 'site_settings_updated',
+      target: { type: 'site_settings', changes: settings },
+    });
+  }
+}
+
+// ============ 7. USER ONLINE STATUS ============
+
+export async function recordUserActivity(userId: string) {
+  const userRef = doc(db, 'profiles', userId);
+  await updateDoc(userRef, {
+    last_online_at: serverTimestamp(),
+  });
+}
+
+export async function getUserLastOnline(userId: string) {
+  const snap = await getDoc(doc(db, 'profiles', userId));
+  if (!snap.exists()) return null;
+  return snap.data()?.last_online_at;
+}
+
+
 export async function fetchUserActivityLogs(userId: string) {
   // Avoid composite index by removing server-side orderBy; sort client-side instead
   const q = query(
@@ -324,6 +460,14 @@ export default {
   getAllUsers,
   getUserDetail,
   updateUserStatus,
+  changeUserRole,
+  approveSeller,
+  rejectSeller,
+  getPendingSellerRequests,
+  getSiteSettings,
+  updateSiteSettings,
+  recordUserActivity,
+  getUserLastOnline,
   fetchUserActivityLogs,
   fetchUserLoginHistory,
   logLoginAttempt,

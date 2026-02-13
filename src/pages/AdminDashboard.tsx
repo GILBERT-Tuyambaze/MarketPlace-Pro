@@ -33,6 +33,7 @@ import {
   Filter,
   Download,
   Search,
+  Settings,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -505,12 +506,20 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
   const [selectedUser, setSelectedUser] = useState<UserDetail | null>(null);
   const [loginHistory, setLoginHistory] = useState<any[]>([]);
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
+  const [pendingSellerRequests, setPendingSellerRequests] = useState<any[]>([]);
+  const [changeRoleUser, setChangeRoleUser] = useState<UserDetail | null>(null);
+  const [newRole, setNewRole] = useState('');
+  const [roleChangeReason, setRoleChangeReason] = useState('');
 
   useEffect(() => {
-    const loadUsers = async () => {
+    const loadData = async () => {
       try {
-        const allUsers = await admin.getAllUsers();
+        const [allUsers, pendingRequests] = await Promise.all([
+          admin.getAllUsers(),
+          admin.getPendingSellerRequests(),
+        ]);
         setUsers(allUsers as any);
+        setPendingSellerRequests(pendingRequests as any);
       } catch (error) {
         console.error('Error loading users:', error);
         toast.error('Failed to load users');
@@ -518,7 +527,7 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
         setLoading(false);
       }
     };
-    loadUsers();
+    loadData();
   }, []);
 
   const handleViewUserDetails = async (user: UserDetail) => {
@@ -538,13 +547,70 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
 
   const handleUpdateUserStatus = async (userId: string, status: string) => {
     try {
-      await admin.updateUserStatus(userId, status);
+      await admin.updateUserStatus(userId, status, userId);
       toast.success('User status updated');
       setUsers(users.map((u) => (u.id === userId ? { ...u, ban_status: status } : u)));
     } catch (error) {
       console.error('Error updating status:', error);
       toast.error('Failed to update user status');
     }
+  };
+
+  const handleChangeRole = async () => {
+    if (!changeRoleUser || !newRole) {
+      toast.error('Please select a role');
+      return;
+    }
+
+    try {
+      await admin.changeUserRole(changeRoleUser.id, newRole, userId, roleChangeReason);
+      toast.success('User role changed successfully');
+      setUsers(users.map((u) => (u.id === changeRoleUser.id ? { ...u, role: newRole } : u)));
+      setChangeRoleUser(null);
+      setNewRole('');
+      setRoleChangeReason('');
+    } catch (error) {
+      console.error('Error changing role:', error);
+      toast.error('Failed to change user role');
+    }
+  };
+
+  const handleApproveSeller = async (userId: string) => {
+    try {
+      await admin.approveSeller(userId, userId);
+      toast.success('Seller approved');
+      setPendingSellerRequests(pendingSellerRequests.filter((r) => r.id !== userId));
+      setUsers(users.map((u) => (u.id === userId ? { ...u, role: 'seller' } : u)));
+    } catch (error) {
+      console.error('Error approving seller:', error);
+      toast.error('Failed to approve seller');
+    }
+  };
+
+  const handleRejectSeller = async (userId: string, reason: string) => {
+    try {
+      await admin.rejectSeller(userId, userId, reason);
+      toast.success('Seller rejected');
+      setPendingSellerRequests(pendingSellerRequests.filter((r) => r.id !== userId));
+    } catch (error) {
+      console.error('Error rejecting seller:', error);
+      toast.error('Failed to reject seller');
+    }
+  };
+
+  const formatLastOnline = (lastOnline: any) => {
+    if (!lastOnline) return 'Never';
+    const date = lastOnline.toDate?.() || new Date(lastOnline);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
   };
 
   const filteredUsers = users.filter((u) => {
@@ -560,6 +626,42 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
 
   return (
     <div className="space-y-6">
+      {/* Pending Seller Requests */}
+      {pendingSellerRequests.length > 0 && (
+        <Card className="border-yellow-200 bg-yellow-50">
+          <CardHeader>
+            <CardTitle className="text-yellow-900">Pending Seller Requests ({pendingSellerRequests.length})</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {pendingSellerRequests.map((request) => (
+              <div key={request.id} className="border rounded-lg p-4 flex justify-between items-center">
+                <div>
+                  <h4 className="font-semibold">{request.full_name}</h4>
+                  <p className="text-sm text-gray-600">{request.email}</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => handleApproveSeller(request.id)}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      const reason = prompt('Rejection reason (optional):');
+                      if (reason !== undefined) handleRejectSeller(request.id, reason);
+                    }}
+                    variant="destructive"
+                  >
+                    Reject
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Search & Filter Users</CardTitle>
@@ -608,12 +710,25 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
                   {user.ban_status && (
                     <Badge variant="destructive">{user.ban_status}</Badge>
                   )}
+                  <Badge variant="outline" className="bg-blue-50">
+                    Last online: {formatLastOnline((user as any).last_online_at)}
+                  </Badge>
                 </div>
               </div>
-              <div className="flex gap-2 ml-4">
+              <div className="flex gap-2 ml-4 flex-wrap">
                 <Button onClick={() => handleViewUserDetails(user)} variant="outline">
                   <Users className="h-4 w-4 mr-1" />
                   Details
+                </Button>
+
+                <Button
+                  onClick={() => {
+                    setChangeRoleUser(user);
+                    setNewRole(user.role);
+                  }}
+                  variant="outline"
+                >
+                  Change Role
                 </Button>
 
                 <Select
@@ -635,6 +750,53 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
         </Card>
       ))}
 
+      {/* Change Role Dialog */}
+      {changeRoleUser && (
+        <Dialog open={!!changeRoleUser} onOpenChange={() => setChangeRoleUser(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Change Role for {changeRoleUser.full_name}</DialogTitle>
+              <DialogDescription>Select a new role and optionally provide a reason</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="new-role">New Role</Label>
+                <Select value={newRole} onValueChange={setNewRole}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="customer">Customer</SelectItem>
+                    <SelectItem value="seller">Seller</SelectItem>
+                    <SelectItem value="editor">Editor</SelectItem>
+                    <SelectItem value="content_manager">Content Manager</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="reason">Reason (Optional)</Label>
+                <Textarea
+                  id="reason"
+                  placeholder="Reason for role change..."
+                  value={roleChangeReason}
+                  onChange={(e) => setRoleChangeReason(e.target.value)}
+                  rows={3}
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={handleChangeRole} className="flex-1">
+                  Confirm Change
+                </Button>
+                <Button onClick={() => setChangeRoleUser(null)} variant="outline" className="flex-1">
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
       {selectedUser && (
         <Dialog open={!!selectedUser} onOpenChange={() => setSelectedUser(null)}>
           <DialogContent className="max-w-3xl max-h-96 overflow-y-auto">
@@ -650,7 +812,7 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
                   ) : (
                     loginHistory.map((log, i) => (
                       <div key={i} className="text-sm border-b pb-2">
-                        <p className="text-gray-700">{log.created_at?.toDate?.().toLocaleString()}</p>
+                        <p className="text-gray-700">{log.login_at?.toDate?.().toLocaleString() || 'Unknown'}</p>
                         {log.ip_address && <p className="text-xs text-gray-500">IP: {log.ip_address}</p>}
                       </div>
                     ))
@@ -667,7 +829,7 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
                     activityLogs.map((log, i) => (
                       <div key={i} className="text-sm border-b pb-2">
                         <p className="text-gray-700"><strong>{log.action}</strong></p>
-                        <p className="text-xs text-gray-500">{log.created_at?.toDate?.().toLocaleString()}</p>
+                        <p className="text-xs text-gray-500">{log.created_at?.toDate?.().toLocaleString() || 'Unknown'}</p>
                       </div>
                     ))
                   )}
@@ -680,6 +842,155 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
             </div>
           </DialogContent>
         </Dialog>
+      )}
+    </div>
+  );
+};
+
+// ============ SETTINGS TAB ============
+
+const SettingsTab: React.FC<{ userId: string }> = ({ userId }) => {
+  const [settings, setSettings] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [maintenanceMessage, setMaintenanceMessage] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const siteSettings = await admin.getSiteSettings();
+        setSettings(siteSettings);
+        setMaintenanceMode(siteSettings.maintenance_mode || false);
+        setMaintenanceMessage(siteSettings.maintenance_message || '');
+      } catch (error) {
+        console.error('Error loading settings:', error);
+        toast.error('Failed to load settings');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadSettings();
+  }, []);
+
+  const handleUpdateSettings = async () => {
+    if (!maintenanceMessage.trim()) {
+      toast.error('Please enter a maintenance message');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await admin.updateSiteSettings(
+        {
+          maintenance_mode: maintenanceMode,
+          maintenance_message: maintenanceMessage,
+        },
+        userId
+      );
+      toast.success('Site settings updated successfully');
+      setSettings({
+        ...settings,
+        maintenance_mode: maintenanceMode,
+        maintenance_message: maintenanceMessage,
+      });
+    } catch (error) {
+      console.error('Error updating settings:', error);
+      toast.error('Failed to update settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <div className="text-center py-8">Loading settings...</div>;
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <AlertCircle className="h-5 w-5 text-orange-600" />
+            Website Maintenance Mode
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-sm text-blue-900">
+              When maintenance mode is enabled, the website will display a "Under Maintenance" message to all visitors. 
+              Only administrators will be able to access the full site.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between p-4 border rounded-lg bg-gray-50">
+              <div>
+                <Label className="font-semibold text-base">Maintenance Mode</Label>
+                <p className="text-sm text-gray-600">
+                  {maintenanceMode ? 'Currently ENABLED' : 'Currently DISABLED'}
+                </p>
+              </div>
+              <Button
+                onClick={() => setMaintenanceMode(!maintenanceMode)}
+                variant={maintenanceMode ? 'destructive' : 'outline'}
+              >
+                {maintenanceMode ? 'Disable' : 'Enable'}
+              </Button>
+            </div>
+
+            {maintenanceMode && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <p className="text-sm text-red-900 font-semibold mb-2">⚠️ Maintenance Mode is Currently Active</p>
+                <p className="text-sm text-red-800">
+                  Regular users will see the maintenance message and won't be able to access the site.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <Label htmlFor="maintenance-msg">Maintenance Message</Label>
+            <p className="text-sm text-gray-600 mb-2">
+              This message will be displayed to visitors when maintenance mode is enabled
+            </p>
+            <Textarea
+              id="maintenance-msg"
+              value={maintenanceMessage}
+              onChange={(e) => setMaintenanceMessage(e.target.value)}
+              placeholder="Enter maintenance message..."
+              rows={5}
+              className="w-full"
+            />
+          </div>
+
+          <div className="bg-gray-50 p-4 rounded-lg border">
+            <p className="font-semibold text-sm mb-2">Preview:</p>
+            <div className="bg-white border rounded p-4 text-center">
+              <AlertCircle className="h-12 w-12 text-orange-600 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Website Under Maintenance</h3>
+              <p className="text-gray-600 text-sm">{maintenanceMessage}</p>
+            </div>
+          </div>
+
+          <Button
+            onClick={handleUpdateSettings}
+            disabled={saving}
+            className="w-full"
+            size="lg"
+          >
+            {saving ? 'Saving...' : 'Save Settings'}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {settings?.maintenance_enabled_at && (
+        <Card className="bg-yellow-50 border-yellow-200">
+          <CardContent className="pt-6">
+            <p className="text-sm text-yellow-900">
+              <strong>Last Enabled:</strong> {settings.maintenance_enabled_at?.toDate?.().toLocaleString()}
+              {settings.maintenance_enabled_by && ` by ${settings.maintenance_enabled_by}`}
+            </p>
+          </CardContent>
+        </Card>
       )}
     </div>
   );
@@ -759,10 +1070,11 @@ const AdminDashboard: React.FC = () => {
 
         {/* Tabs */}
         <Tabs defaultValue="communication">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="communication">Communication</TabsTrigger>
             <TabsTrigger value="claims">Claims</TabsTrigger>
             <TabsTrigger value="users">User Management</TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
 
           <TabsContent value="communication">
@@ -775,6 +1087,10 @@ const AdminDashboard: React.FC = () => {
 
           <TabsContent value="users">
             {user && <UserManagementTab userId={user.uid} />}
+          </TabsContent>
+
+          <TabsContent value="settings">
+            {user && <SettingsTab userId={user.uid} />}
           </TabsContent>
         </Tabs>
       </div>
