@@ -3,10 +3,10 @@ import { useAuth } from '../context/AuthContext';
 import * as Editor from '../lib/editor';
 
 export default function EditorDashboard() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [tab, setTab] = useState<'approvals' | 'claims' | 'messages' | 'products'>('approvals');
 
-  if (!user || !(Editor.canEditorPerform(user.role))) {
+  if (!user || !profile || !(Editor.canEditorPerform(profile.role))) {
     return <div className="p-4">Access denied. Editor role required.</div>;
   }
 

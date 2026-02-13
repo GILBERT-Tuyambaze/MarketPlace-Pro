@@ -3,10 +3,10 @@ import { useAuth } from '../context/AuthContext';
 import * as CM from '../lib/contentManager';
 
 export default function ContentManagerDashboard() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [tab, setTab] = useState<'products' | 'claims' | 'messages' | 'announcements' | 'orders'>('products');
 
-  if (!user || !CM.canContentManagerPerform(user.role)) {
+  if (!user || !profile || !CM.canContentManagerPerform(profile.role)) {
     return <div className="p-4">Access denied. Content Manager role required.</div>;
   }
 

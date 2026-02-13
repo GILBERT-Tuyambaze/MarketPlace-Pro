@@ -66,7 +66,7 @@ const Header: React.FC = () => {
       case 'editor':
         return '/editor/dashboard';
       case 'content_manager':
-        return '/content/dashboard';
+        return '/content-manager/dashboard';
       default:
         return '/profile';
     }
