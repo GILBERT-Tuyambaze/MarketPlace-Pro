@@ -1619,6 +1619,176 @@ interface UserClaims {
   admin: boolean;
 }
 
+// ============ NOTIFICATIONS & ANNOUNCEMENTS TAB ============
+
+const AdminNotificationsTab: React.FC<{ userId: string; profile: any; type: 'notification' | 'announcement' }> = ({ userId, profile, type }) => {
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [isPublished, setIsPublished] = useState(false);
+
+  // Dynamic imports
+  const Customer = require('../lib/customer');
+
+  useEffect(() => {
+    loadItems();
+  }, [type]);
+
+  async function loadItems() {
+    setLoading(true);
+    try {
+      const allItems = await Customer.fetchNotifications();
+      const filtered = allItems.filter((item: any) => item.type === type);
+      setItems(filtered);
+    } catch (error) {
+      console.error('Error loading items:', error);
+      toast.error(`Failed to load ${type}s`);
+    }
+    setLoading(false);
+  }
+
+  async function handleCreate() {
+    if (!title.trim() || !content.trim()) {
+      toast.error('Title and content required');
+      return;
+    }
+    try {
+      await Customer.createNotification(
+        title,
+        content,
+        type,
+        userId,
+        profile?.full_name || 'Admin',
+        profile?.role || 'admin',
+        isPublished
+      );
+      setTitle('');
+      setContent('');
+      setIsPublished(false);
+      await loadItems();
+      toast.success(`${type.charAt(0).toUpperCase() + type.slice(1)} created!`);
+    } catch (err) {
+      console.error(err);
+      toast.error(`Error creating ${type}`);
+    }
+  }
+
+  async function handleDelete(itemId: string) {
+    if (!window.confirm(`Delete this ${type}?`)) return;
+    try {
+      await Customer.deleteNotification(itemId);
+      await loadItems();
+      toast.success('Deleted');
+    } catch (err) {
+      console.error(err);
+      toast.error('Error deleting');
+    }
+  }
+
+  async function handleTogglePublish(item: any) {
+    try {
+      await Customer.updateNotification(item.id, { is_published: !item.is_published });
+      await loadItems();
+      toast.success('Updated');
+    } catch (err) {
+      console.error(err);
+      toast.error('Error updating');
+    }
+  }
+
+  const typeLabel = type.charAt(0).toUpperCase() + type.slice(1);
+  const bgColor = type === 'announcement' ? 'bg-orange-50 border-orange-300' : 'bg-blue-50 border-blue-300';
+
+  return (
+    <div className="space-y-4">
+      <Card className={`border-2 ${bgColor}`}>
+        <CardHeader>
+          <CardTitle>Create {typeLabel}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div>
+            <Label className="text-sm">Title</Label>
+            <Input
+              placeholder={`${typeLabel} title...`}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label className="text-sm">Content</Label>
+            <Textarea
+              placeholder={`${typeLabel} content...`}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              rows={4}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="publish"
+              checked={isPublished}
+              onCheckedChange={(checked) => setIsPublished(checked as boolean)}
+            />
+            <Label htmlFor="publish" className="cursor-pointer">Publish immediately</Label>
+          </div>
+          <Button onClick={handleCreate} className="w-full">
+            Create {typeLabel}
+          </Button>
+        </CardContent>
+      </Card>
+
+      {loading ? (
+        <p className="text-center py-8 text-gray-500">Loading...</p>
+      ) : items.length === 0 ? (
+        <Card>
+          <CardContent className="text-center py-8 text-gray-500">
+            No {type}s created yet
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item) => (
+            <Card key={item.id}>
+              <CardContent className="p-4">
+                <div className="flex justify-between items-start gap-3">
+                  <div className="flex-1">
+                    <p className="font-bold">{item.title}</p>
+                    <p className="text-sm text-gray-700 mt-1">{item.content}</p>
+                    <div className="flex gap-2 mt-2">
+                      <Badge>{item.is_published ? '✅ Published' : '⏸️ Draft'}</Badge>
+                      <Badge variant="secondary">{item.creator_name}</Badge>
+                    </div>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      onClick={() => handleTogglePublish(item)}
+                      size="sm"
+                      variant="outline"
+                      title={item.is_published ? 'Unpublish' : 'Publish'}
+                    >
+                      {item.is_published ? '📴' : '📡'}
+                    </Button>
+                    <Button
+                      onClick={() => handleDelete(item.id)}
+                      size="sm"
+                      variant="outline"
+                      className="text-red-600 hover:text-red-700"
+                      title="Delete"
+                    >
+                      🗑️
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const CustomClaimsTab: React.FC<{ userId: string }> = ({ userId }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUid, setSelectedUid] = useState('');
@@ -2183,9 +2353,11 @@ const AdminDashboard: React.FC = () => {
 
         {/* Tabs */}
         <Tabs defaultValue="communication">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="communication">Communication</TabsTrigger>
             <TabsTrigger value="claims">Claims</TabsTrigger>
+            <TabsTrigger value="notifications">Notifications</TabsTrigger>
+            <TabsTrigger value="announcements">Announcements</TabsTrigger>
             <TabsTrigger value="roles">Manage Roles</TabsTrigger>
             <TabsTrigger value="users">User Management</TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -2197,6 +2369,14 @@ const AdminDashboard: React.FC = () => {
 
           <TabsContent value="claims">
             {user && <ClaimsTab userId={user.uid} />}
+          </TabsContent>
+
+          <TabsContent value="notifications">
+            {user && profile && <AdminNotificationsTab userId={user.uid} profile={profile} type="notification" />}
+          </TabsContent>
+
+          <TabsContent value="announcements">
+            {user && profile && <AdminNotificationsTab userId={user.uid} profile={profile} type="announcement" />}
           </TabsContent>
 
           <TabsContent value="roles">

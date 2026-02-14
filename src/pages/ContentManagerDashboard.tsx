@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import * as CM from '../lib/contentManager';
+import * as Customer from '../lib/customer';
 import Layout from '@/components/Layout/Layout';
 
 export default function ContentManagerDashboard() {
   const { user, profile } = useAuth();
-  const [tab, setTab] = useState<'users' | 'claims' | 'messages' | 'announcements' | 'orders'>('users');
+  const [tab, setTab] = useState<'users' | 'claims' | 'messages' | 'notifications' | 'announcements' | 'orders'>('users');
 
   if (!user || !profile || !CM.canContentManagerPerform(profile.role)) {
     return <div className="p-4">Access denied. Content Manager role required.</div>;
@@ -17,7 +18,7 @@ export default function ContentManagerDashboard() {
         <h1 className="text-2xl font-bold mb-4">Content Manager Dashboard</h1>
 
         <div className="flex gap-2 mb-6 flex-wrap">
-          {['users', 'claims', 'messages', 'announcements', 'orders'].map((t) => (
+          {['users', 'claims', 'messages', 'notifications', 'announcements', 'orders'].map((t) => (
             <button
               key={t}
               className={`px-4 py-2 rounded capitalize transition ${
@@ -25,7 +26,7 @@ export default function ContentManagerDashboard() {
               }`}
               onClick={() => setTab(t as any)}
             >
-              {t === 'users' ? '👥 Users' : t === 'claims' ? '📋 Claims' : t === 'messages' ? '💬 Messages' : t === 'announcements' ? '📢 Announcements' : '📦 Orders'}
+              {t === 'users' ? '👥 Users' : t === 'claims' ? '📋 Claims' : t === 'messages' ? '💬 Messages' : t === 'notifications' ? '🔔 Notifications' : t === 'announcements' ? '📢 Announcements' : '📦 Orders'}
             </button>
           ))}
         </div>
@@ -33,6 +34,7 @@ export default function ContentManagerDashboard() {
         {tab === 'users' && <UsersTab user={user} />}
         {tab === 'claims' && <ClaimsTab user={user} />}
         {tab === 'messages' && <MessagesTab user={user} />}
+        {tab === 'notifications' && <NotificationsTab user={user} profile={profile} />}
         {tab === 'announcements' && <AnnouncementsTab user={user} />}
         {tab === 'orders' && <OrdersTab user={user} />}
       </div>
@@ -394,6 +396,141 @@ function MessagesTab({ user }: { user: any }) {
       >
         Send Message
       </button>
+    </div>
+  );
+}
+
+// ============ NOTIFICATIONS TAB ============
+function NotificationsTab({ user, profile }: { user: any; profile: any }) {
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
+  const [isPublished, setIsPublished] = useState(false);
+  const [activeType, setActiveType] = useState<'notification' | 'announcement'>('notification');
+
+  const { fetchNotifications, createNotification } = require('../lib/customer');
+
+  useEffect(() => {
+    loadNotifications();
+  }, []);
+
+  async function loadNotifications() {
+    setLoading(true);
+    try {
+      const notifs = await Customer.fetchNotifications();
+      setNotifications(notifs);
+    } catch (error) {
+      console.error('Error loading notifications:', error);
+      alert('Failed to load notifications');
+    }
+    setLoading(false);
+  }
+
+  async function handleCreate() {
+    if (!title.trim() || !content.trim()) {
+      alert('Title and content required');
+      return;
+    }
+    try {
+      await Customer.createNotification(
+        title,
+        content,
+        activeType,
+        user.uid,
+        profile?.full_name || user.email,
+        profile?.role || 'user',
+        isPublished
+      );
+      setTitle('');
+      setContent('');
+      setIsPublished(false);
+      await loadNotifications();
+      alert(`${activeType.charAt(0).toUpperCase() + activeType.slice(1)} created!`);
+    } catch (err) {
+      console.error(err);
+      alert(`Error creating ${activeType}`);
+    }
+  }
+
+  const filteredNotifications = notifications.filter((n) => n.type === activeType);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <button
+          onClick={() => setActiveType('notification')}
+          className={`px-4 py-2 rounded transition ${
+            activeType === 'notification' ? 'bg-blue-600 text-white' : 'bg-gray-200 hover:bg-gray-300'
+          }`}
+        >
+          🔔 Notifications
+        </button>
+        <button
+          onClick={() => setActiveType('announcement')}
+          className={`px-4 py-2 rounded transition ${
+            activeType === 'announcement' ? 'bg-orange-600 text-white' : 'bg-gray-200 hover:bg-gray-300'
+          }`}
+        >
+          📢 Announcements
+        </button>
+      </div>
+
+      <div className={`p-4 rounded border-2 ${activeType === 'announcement' ? 'border-orange-300 bg-orange-50' : 'border-blue-300 bg-blue-50'}`}>
+        <h3 className="font-bold mb-3">Create {activeType}</h3>
+        <div className="space-y-2">
+          <input
+            type="text"
+            placeholder="Title..."
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full border rounded px-2 py-1"
+          />
+          <textarea
+            placeholder="Content..."
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            className="w-full border rounded px-2 py-1 h-20"
+          />
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={isPublished}
+              onChange={(e) => setIsPublished(e.target.checked)}
+              id="publish-now"
+            />
+            <label htmlFor="publish-now">Publish immediately</label>
+          </div>
+          <button
+            onClick={handleCreate}
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+          >
+            Create
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <p>Loading...</p>
+      ) : filteredNotifications.length === 0 ? (
+        <p className="text-gray-500">No {activeType}s created yet</p>
+      ) : (
+        <div className="space-y-2">
+          {filteredNotifications.map((notif) => (
+            <div key={notif.id} className="p-3 border rounded bg-white">
+              <div className="flex justify-between items-start">
+                <div>
+                  <p className="font-bold">{notif.title}</p>
+                  <p className="text-sm text-gray-700">{notif.content}</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {notif.is_published ? '✅ Published' : '⏸️ Draft'} • {notif.creator_name}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

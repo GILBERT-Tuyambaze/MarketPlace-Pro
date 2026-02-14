@@ -534,9 +534,10 @@ export interface ChatListItem {
   unread: boolean;
 }
 
-export async function fetchUserChatList(userId: string): Promise<ChatListItem[]> {
+export async function fetchUserChatList(userId: string, userRole?: string): Promise<ChatListItem[]> {
   try {
     // Fetch all conversations for user
+    // Admins can see ALL conversations, non-admins see only received messages
     const messagesQuery = query(collection(db, 'chat_messages'));
     const snapshot = await getDocs(messagesQuery);
 
@@ -544,25 +545,31 @@ export async function fetchUserChatList(userId: string): Promise<ChatListItem[]>
 
     snapshot.docs.forEach((doc) => {
       const data = doc.data() as ChatMessage;
-      const otherUserId =
-        data.sender_id === userId ? data.recipient_id : data.sender_id;
-      const otherUserName =
-        data.sender_id === userId ? data.recipient_name : data.sender_name;
+      
+      // Determine if this conversation should be visible
+      const isForThisUser = data.recipient_id === userId;
+      const isAdmin = userRole === 'admin';
+      const shouldShow = isAdmin || isForThisUser;
+      
+      if (shouldShow) {
+        const otherUserId = data.sender_id === userId ? data.recipient_id : data.sender_id;
+        const otherUserName = data.sender_id === userId ? data.recipient_name : data.sender_name;
 
-      if (!conversations[otherUserId]) {
-        conversations[otherUserId] = {
-          user_id: otherUserId,
-          user_name: otherUserName,
-          last_message: data.message,
-          last_message_at: data.created_at,
-          unread: !data.read && data.recipient_id === userId,
-        };
-      } else {
-        // Update if this message is newer
-        const currentLastTime = conversations[otherUserId].last_message_at;
-        if (data.created_at.toMillis() > currentLastTime.toMillis()) {
-          conversations[otherUserId].last_message = data.message;
-          conversations[otherUserId].last_message_at = data.created_at;
+        if (!conversations[otherUserId]) {
+          conversations[otherUserId] = {
+            user_id: otherUserId,
+            user_name: otherUserName,
+            last_message: data.message,
+            last_message_at: data.created_at,
+            unread: !data.read && data.recipient_id === userId,
+          };
+        } else {
+          // Update if this message is newer
+          const currentLastTime = conversations[otherUserId].last_message_at;
+          if (data.created_at.toMillis() > currentLastTime.toMillis()) {
+            conversations[otherUserId].last_message = data.message;
+            conversations[otherUserId].last_message_at = data.created_at;
+          }
         }
       }
     });
@@ -577,9 +584,19 @@ export async function fetchUserChatList(userId: string): Promise<ChatListItem[]>
 
 export async function markChatMessagesAsRead(
   senderId: string,
-  recipientId: string
+  recipientId: string,
+  currentUserId?: string,
+  userRole?: string
 ): Promise<void> {
   try {
+    // Only mark messages as read if the current user is the intended recipient
+    // Admins viewing conversations not meant for them won't mark as read
+    const isRecipient = currentUserId === recipientId;
+    if (!isRecipient) {
+      // Admin or other user viewing a conversation not for them - don't mark as read
+      return;
+    }
+
     const messagesQuery = query(
       collection(db, 'chat_messages'),
       where('sender_id', '==', senderId),
@@ -710,19 +727,50 @@ export async function addClaimReply(
   }
 }
 
-// Fetch all claim threads for customer
-export async function fetchCustomerClaims(userId: string): Promise<ClaimThread[]> {
+// Fetch all claim threads for customer (both sent by user and assigned to user's department/role)
+export async function fetchCustomerClaims(userId: string, userRole?: string, userDepartment?: string): Promise<ClaimThread[]> {
   try {
-    const q = query(
-      collection(db, 'claims'),
-      where('sender_id', '==', userId),
-      orderBy('updated_at', 'desc')
-    );
-    const snapshot = await getDocs(q);
-    return snapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    })) as ClaimThread[];
+    // Get all claims (we'll filter client-side for better flexibility)
+    const claimsSnapshot = await getDocs(collection(db, 'claims'));
+    
+    const userClaims = claimsSnapshot.docs
+      .map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }))
+      .filter((claim: any) => {
+        // Admins can see all claims
+        if (userRole === 'admin') {
+          return true;
+        }
+
+        // Always show claims created by this user
+        if (claim.sender_id === userId) {
+          return true;
+        }
+
+        // Show claims meant for this user's role/department
+        // Claims can be addressed to: 'admin', 'seller', 'editor', 'content_manager', 'general', etc.
+        if (userRole) {
+          // Show if department matches user's role
+          if (claim.department === userRole) {
+            return true;
+          }
+          // Show if department is 'general' or 'admin' (meant for all)
+          if (claim.department === 'general' || claim.department === 'admin') {
+            return true;
+          }
+        }
+
+        return false;
+      })
+      .sort((a: any, b: any) => {
+        const timeA = a.updated_at?.toMillis?.() || 0;
+        const timeB = b.updated_at?.toMillis?.() || 0;
+        return timeB - timeA;
+      }) as ClaimThread[];
+
+    return userClaims;
   } catch (error) {
     console.error('Error fetching customer claims:', error);
     return [];
@@ -830,6 +878,132 @@ export async function searchUsers(
     return results;
   } catch (error) {
     console.error('Error searching users:', error);
+    throw error;
+  }
+}
+
+// ============ NOTIFICATIONS SYSTEM (Content Manager) ============
+
+export interface Notification {
+  id: string;
+  title: string;
+  content: string;
+  type: 'notification' | 'announcement'; // notification or announcement
+  created_by: string;
+  creator_name: string;
+  creator_role: string;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  is_published: boolean;
+  read_by?: string[]; // Array of user IDs who have read this
+}
+
+export async function createNotification(
+  title: string,
+  content: string,
+  type: 'notification' | 'announcement',
+  createdBy: string,
+  creatorName: string,
+  creatorRole: string,
+  isPublished: boolean = false
+): Promise<string> {
+  try {
+    const docRef = await addDoc(collection(db, 'notifications'), {
+      title,
+      content,
+      type,
+      created_by: createdBy,
+      creator_name: creatorName,
+      creator_role: creatorRole,
+      created_at: Timestamp.now(),
+      updated_at: Timestamp.now(),
+      is_published: isPublished,
+      read_by: [], // Start with empty read list
+    });
+    return docRef.id;
+  } catch (error) {
+    console.error('Error creating notification:', error);
+    throw error;
+  }
+}
+
+export async function fetchNotifications(userRole?: string, typeFilter?: 'notification' | 'announcement'): Promise<Notification[]> {
+  try {
+    const q = query(collection(db, 'notifications'), orderBy('updated_at', 'desc'));
+    const snapshot = await getDocs(q);
+    let results = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as Notification[];
+
+    // Filter by type if specified
+    if (typeFilter) {
+      results = results.filter((n) => n.type === typeFilter);
+    }
+
+    return results;
+  } catch (error) {
+    console.error('Error fetching notifications:', error);
+    return [];
+  }
+}
+
+export async function getUnreadNotificationCount(userId: string): Promise<number> {
+  try {
+    const q = query(collection(db, 'notifications'), where('is_published', '==', true));
+    const snapshot = await getDocs(q);
+    
+    // Count notifications not in read_by array
+    const unreadCount = snapshot.docs.filter((doc) => {
+      const readBy = doc.data().read_by || [];
+      return !readBy.includes(userId);
+    }).length;
+    
+    return unreadCount;
+  } catch (error) {
+    console.error('Error fetching unread count:', error);
+    return 0;
+  }
+}
+
+export async function markNotificationAsRead(notificationId: string, userId: string): Promise<void> {
+  try {
+    const notifRef = doc(db, 'notifications', notificationId);
+    const notifDoc = await getDoc(notifRef);
+    
+    if (notifDoc.exists()) {
+      const readBy = notifDoc.data().read_by || [];
+      if (!readBy.includes(userId)) {
+        readBy.push(userId);
+        await updateDoc(notifRef, { read_by: readBy });
+      }
+    }
+  } catch (error) {
+    console.error('Error marking notification as read:', error);
+    throw error;
+  }
+}
+
+export async function updateNotification(
+  notificationId: string,
+  updates: { title?: string; content?: string; is_published?: boolean }
+): Promise<void> {
+  try {
+    await updateDoc(doc(db, 'notifications', notificationId), {
+      ...updates,
+      updated_at: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error('Error updating notification:', error);
+    throw error;
+  }
+}
+
+export async function deleteNotification(notificationId: string): Promise<void> {
+  try {
+    await deleteDoc(doc(db, 'notifications', notificationId));
+  } catch (error) {
+    console.error('Error deleting notification:', error);
     throw error;
   }
 }

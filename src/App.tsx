@@ -32,6 +32,7 @@ import EditorDashboard from './pages/EditorDashboard';
 import ContentManagerDashboard from './pages/ContentManagerDashboard';
 import ClaimsMessenger from './pages/ClaimsMessenger';
 import ChatPage from './pages/ChatPage';
+import NotificationPage from './pages/NotificationPage';
 import AddProduct from './pages/AddProduct';
 import SeedData from './pages/SeedData';
 import Diagnostics from './pages/Diagnostics';
@@ -133,6 +134,14 @@ const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <ChatPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/notifications',
+    element: (
+      <ProtectedRoute>
+        <NotificationPage />
       </ProtectedRoute>
     ),
   },

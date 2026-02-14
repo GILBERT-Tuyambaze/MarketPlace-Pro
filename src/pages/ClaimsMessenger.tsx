@@ -61,7 +61,11 @@ export default function ClaimsMessenger() {
     const loadClaims = async () => {
       try {
         setLoading(true);
-        const userClaims = await Customer.fetchCustomerClaims(user!.uid);
+        const userClaims = await Customer.fetchCustomerClaims(
+          user!.uid,
+          profile?.role,
+          profile?.department
+        );
         setClaims(userClaims);
       } catch (error) {
         console.error('Error loading claims:', error);
@@ -71,7 +75,7 @@ export default function ClaimsMessenger() {
       }
     };
     if (user?.uid) loadClaims();
-  }, [user]);
+  }, [user, profile?.role, profile?.department]);
 
   // Load messages for selected claim
   useEffect(() => {
@@ -110,7 +114,7 @@ export default function ClaimsMessenger() {
         selectedClaim.id,
         user.uid,
         profile?.full_name || user.email || 'Customer',
-        'customer',
+        profile?.role || 'customer',
         messageInput.trim()
       );
 
@@ -144,8 +148,12 @@ export default function ClaimsMessenger() {
         newClaimData.department
       );
 
-      // Reload claims
-      const userClaims = await Customer.fetchCustomerClaims(user!.uid);
+      // Reload claims with role-based filtering
+      const userClaims = await Customer.fetchCustomerClaims(
+        user!.uid,
+        profile?.role,
+        profile?.department
+      );
       setClaims(userClaims);
 
       // Reset form
@@ -343,16 +351,21 @@ export default function ClaimsMessenger() {
             <>
               {/* Header */}
               <div className="p-4 border-b bg-gradient-to-r from-blue-50 to-blue-100">
-                <h2 className="font-semibold text-lg">{selectedClaim.title}</h2>
-                <div className="flex gap-2 mt-2 flex-wrap">
+                <h2 className="font-semibold text-lg mb-2">{selectedClaim.title}</h2>
+                <div className="space-y-2">
+                  <div className="text-sm text-gray-700">
+                    <span className="font-medium">From:</span> {selectedClaim.sender_name} (Customer)
+                  </div>
+                  <div className="text-sm text-gray-700">
+                    <span className="font-medium">To:</span> {selectedClaim.department.charAt(0).toUpperCase() + selectedClaim.department.slice(1)} Team
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-3 flex-wrap">
                   <Badge className={getStatusColor(selectedClaim.status)}>
                     {selectedClaim.status}
                   </Badge>
                   <Badge variant="outline" className="text-xs">
                     {selectedClaim.claim_type}
-                  </Badge>
-                  <Badge variant="outline" className="text-xs">
-                    {selectedClaim.department}
                   </Badge>
                   <span className="text-xs text-gray-600 flex items-center gap-1">
                     <Clock className="h-3 w-3" />

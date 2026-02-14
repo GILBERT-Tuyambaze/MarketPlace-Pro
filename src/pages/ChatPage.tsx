@@ -60,7 +60,7 @@ const ChatPage: React.FC = () => {
 
     const loadChatList = async () => {
       try {
-        const list = await Customer.fetchUserChatList(user.uid);
+        const list = await Customer.fetchUserChatList(user.uid, profile?.role);
         setChatList(list);
       } catch (error) {
         console.error('Error loading chat list:', error);
@@ -70,7 +70,7 @@ const ChatPage: React.FC = () => {
     loadChatList();
     const interval = setInterval(loadChatList, 3000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, profile?.role]);
 
   // Load messages when user is selected
   useEffect(() => {
@@ -84,7 +84,8 @@ const ChatPage: React.FC = () => {
         const userMessages = await Customer.fetchChatMessages(user.uid, selectedUser.user_id);
         if (isMounted) {
           setMessages(userMessages);
-          await Customer.markChatMessagesAsRead(selectedUser.user_id, user.uid);
+          // Mark as read only if this user is the intended recipient
+          await Customer.markChatMessagesAsRead(selectedUser.user_id, user.uid, user.uid, profile?.role);
           
           // Hide loading state only on first load
           if (isFirstLoad && isMounted) {
@@ -112,7 +113,7 @@ const ChatPage: React.FC = () => {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [user, selectedUser]);
+  }, [user, selectedUser, profile?.role]);
 
   // Auto-scroll to bottom
   useEffect(() => {

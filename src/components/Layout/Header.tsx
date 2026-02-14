@@ -22,6 +22,7 @@ import {
   Edit,
   FileText,
   MessageCircle,
+  Bell,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useCart } from '@/context/CartContext';
@@ -29,9 +30,30 @@ import { useCart } from '@/context/CartContext';
 const Header: React.FC = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
   const { user, profile, loading, signOut } = useAuth();
   const { getTotalItems } = useCart();
   const navigate = useNavigate();
+
+  // Fetch unread notification count
+  React.useEffect(() => {
+    if (!user?.uid) return;
+
+    const fetchUnreadCount = async () => {
+      try {
+        const { getUnreadNotificationCount } = await import('@/lib/customer');
+        const count = await getUnreadNotificationCount(user.uid);
+        setUnreadNotifications(count);
+      } catch (error) {
+        console.error('Error fetching unread count:', error);
+      }
+    };
+
+    fetchUnreadCount();
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchUnreadCount, 30000);
+    return () => clearInterval(interval);
+  }, [user?.uid]);
 
   // Debug logging in development
   React.useEffect(() => {
@@ -146,6 +168,20 @@ const Header: React.FC = () => {
               </Link>
             )}
 
+            {/* Notifications */}
+            {user && (
+              <Link to="/notifications">
+                <Button variant="ghost" size="icon" title="Notifications" className="relative">
+                  <Bell className="h-5 w-5" />
+                  {unreadNotifications > 0 && (
+                    <Badge className="absolute -top-2 -right-2 h-5 w-5 flex items-center justify-center p-0 text-xs bg-red-600">
+                      {unreadNotifications}
+                    </Badge>
+                  )}
+                </Button>
+              </Link>
+            )}
+
             {/* Cart */}
             <Link to="/cart">
               <Button variant="ghost" size="sm" className="relative">
@@ -237,6 +273,15 @@ const Header: React.FC = () => {
               >
                 Products
               </Link>
+              {user && (
+                <Link
+                  to="/claims"
+                  className="block px-4 py-2 text-foreground/80 hover:text-foreground transition-colors"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  Claims
+                </Link>
+              )}
               {profile?.role === 'seller' && (
                 <Link
                   to="/seller/dashboard"
