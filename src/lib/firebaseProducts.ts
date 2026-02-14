@@ -6,6 +6,7 @@ import {
   getDocs,
   doc,
   getDoc,
+  updateDoc,
   limit,
   startAfter,
   QueryConstraint,
@@ -141,6 +142,18 @@ export const fetchProductById = async (productId: string): Promise<FirebaseProdu
   } catch (error) {
     console.error('Error fetching product by ID:', error, 'ID:', productId);
     return null;
+  }
+};
+
+// Update product status (approve/reject)
+export const updateProductStatus = async (productId: string, status: string): Promise<void> => {
+  try {
+    const docRef = doc(db, 'products', productId);
+    await updateDoc(docRef, { status });
+    console.log('Updated product status', productId, status);
+  } catch (error) {
+    console.error('Error updating product status:', error, productId, status);
+    throw error;
   }
 };
 

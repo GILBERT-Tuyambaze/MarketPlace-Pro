@@ -24,6 +24,7 @@ import SellerProfile from './pages/SellerProfile';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminClaimsManager from './pages/AdminClaimsManager';
+import AdminProducts from './pages/AdminProducts';
 import SellerDashboard from './pages/SellerDashboard';
 import EditorDashboard from './pages/EditorDashboard';
 import ContentManagerDashboard from './pages/ContentManagerDashboard';
@@ -121,6 +122,14 @@ const router = createBrowserRouter([
     element: (
       <ProtectedRoute allowedRoles={['admin']} skipMarketplaceLock={true}>
         <AdminDashboard />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/admin/products',
+    element: (
+      <ProtectedRoute allowedRoles={['admin','editor']} skipMarketplaceLock={true}>
+        <AdminProducts />
       </ProtectedRoute>
     ),
   },
