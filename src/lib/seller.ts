@@ -9,6 +9,7 @@ import {
   addDoc,
   updateDoc,
   getDoc,
+  collectionGroup,
   serverTimestamp,
   limit,
 } from 'firebase/firestore';
@@ -227,6 +228,81 @@ export async function getSellerProducts(sellerId: string) {
   );
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+// ============ SELLER AGGREGATION / STATS ============
+
+export async function getSellerSoldAndRevenue(sellerId: string) {
+  try {
+    const orders = await fetchSellerOrders(sellerId, 1000);
+    let soldCount = 0;
+    let revenue = 0;
+
+      for (const o of orders as Array<Record<string, any>>) {
+        const items: Array<Record<string, any>> = o.items || [];
+        for (const item of items) {
+        // item should contain product_id, seller_id, quantity, price, status
+        if ((item.seller_id || item.sellerId) === sellerId) {
+          // count sold items excluding cancelled
+          if (item.status && item.status !== 'cancelled') {
+            const qty = item.quantity || 0;
+            soldCount += qty;
+            const price = item.price || item.unit_price || item.product_price || 0;
+            revenue += (price * qty);
+          }
+        }
+      }
+    }
+
+    return { soldCount, revenue };
+  } catch (error) {
+    console.error('Error computing seller sold/revenue:', error, sellerId);
+    return { soldCount: 0, revenue: 0 };
+  }
+}
+
+export async function getSellerInCartCount(sellerId: string) {
+  try {
+    // Query all cart subcollections across users
+    const cartQuery = collectionGroup(db, 'cart');
+    const snap = await getDocs(cartQuery);
+
+    // Build map of productId -> totalQuantity
+    const productQuantities: Record<string, number> = {};
+    const productIds = new Set<string>();
+
+    for (const docSnap of snap.docs) {
+      const data = docSnap.data() as Record<string, any>;
+      const pid = data.product_id;
+      const qty = data.quantity || 1;
+      if (!pid) continue;
+      productQuantities[pid] = (productQuantities[pid] || 0) + qty;
+      productIds.add(pid);
+    }
+
+    // Fetch product docs in batches
+    const productIdList = Array.from(productIds);
+    let inCartTotal = 0;
+    const batchSize = 50;
+    for (let i = 0; i < productIdList.length; i += batchSize) {
+      const batch = productIdList.slice(i, i + batchSize);
+      const fetches = batch.map((pid) => getDoc(doc(db, 'products', pid)));
+      const snaps = await Promise.all(fetches);
+      for (const psnap of snaps) {
+        if (!psnap || !psnap.exists()) continue;
+        const pdata = psnap.data() as Record<string, any>;
+        const pid = psnap.id;
+        if ((pdata.seller_id || pdata.sellerId) === sellerId) {
+          inCartTotal += (productQuantities[pid] || 0);
+        }
+      }
+    }
+
+    return inCartTotal;
+  } catch (error) {
+    console.error('Error computing in-cart count for seller:', error, sellerId);
+    return 0;
+  }
 }
 
 export async function addSellerProduct(sellerId: string, productData: {

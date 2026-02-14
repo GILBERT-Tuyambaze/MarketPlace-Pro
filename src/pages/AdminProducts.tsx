@@ -8,9 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
+import * as SellerLib from '@/lib/seller';
+import * as Customer from '@/lib/customer';
 
 const AdminProductsPage: React.FC = () => {
   const [products, setProducts] = useState<FirebaseProduct[]>([]);
+  const [sellerStats, setSellerStats] = useState<Record<string, { soldCount: number; revenue: number; inCart: number; info?: any }>>({});
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all'|'pending'|'approved'|'rejected'>('all');
@@ -21,6 +24,24 @@ const AdminProductsPage: React.FC = () => {
       setLoading(true);
       const res = await fetchProducts(undefined, undefined, 'created_at', 500);
       setProducts(res);
+
+      // Compute per-seller stats for unique sellers in this result set
+      const sellerIds = Array.from(new Set(res.map(r => r.seller_id).filter(Boolean)));
+      const statsMap: Record<string, any> = {};
+      await Promise.all(sellerIds.map(async (sid) => {
+        try {
+          const [sold, inCart, info] = await Promise.all([
+            SellerLib.getSellerSoldAndRevenue(sid),
+            SellerLib.getSellerInCartCount(sid),
+            Customer.fetchSellerInfo(sid),
+          ]);
+          statsMap[sid] = { soldCount: sold.soldCount || 0, revenue: sold.revenue || 0, inCart: inCart || 0, info };
+        } catch (e) {
+          console.error('Error computing stats for seller', sid, e);
+          statsMap[sid] = { soldCount: 0, revenue: 0, inCart: 0 };
+        }
+      }));
+      setSellerStats(statsMap);
     } catch (error) {
       console.error('Error loading products for admin:', error);
       toast.error('Failed to load products');
@@ -109,8 +130,13 @@ const AdminProductsPage: React.FC = () => {
                         <h3 className="font-semibold">{p.name}</h3>
                         <Badge className="bg-gray-100">{p.status || 'approved'}</Badge>
                       </div>
-                      <p className="text-sm text-gray-600">Seller: {p.seller_name || '—'}</p>
+                      <p className="text-sm text-gray-600">Seller: {sellerStats[p.seller_id]?.info?.name || p.seller_name || '—'}</p>
                       <p className="text-sm text-gray-600">Price: {p.price}</p>
+                      <div className="text-sm text-gray-600 mt-2">
+                        <span className="mr-3">Sold: <strong>{sellerStats[p.seller_id]?.soldCount ?? 0}</strong></span>
+                        <span className="mr-3">In Cart: <strong>{sellerStats[p.seller_id]?.inCart ?? 0}</strong></span>
+                        <span>Revenue: <strong>{(sellerStats[p.seller_id]?.revenue || 0).toFixed(2)}</strong></span>
+                      </div>
                       <div className="mt-3 flex gap-2">
                         {p.status !== 'approved' && (
                           <Button size="sm" onClick={() => handleApprove(p.id)}>Approve</Button>
