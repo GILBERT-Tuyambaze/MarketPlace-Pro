@@ -5,7 +5,7 @@ import Layout from '@/components/Layout/Layout';
 
 export default function EditorDashboard() {
   const { user, profile } = useAuth();
-  const [tab, setTab] = useState<'approvals' | 'claims' | 'messages' | 'products'>('approvals');
+  const [tab, setTab] = useState<'approvals' | 'claims' | 'messages' | 'users'>('approvals');
 
   if (!user || !profile || !(Editor.canEditorPerform(profile.role))) {
     return <div className="p-4">Access denied. Editor role required.</div>;
@@ -30,10 +30,10 @@ export default function EditorDashboard() {
             Claims
           </button>
           <button
-            className={`px-4 py-2 rounded ${tab === 'products' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
-            onClick={() => setTab('products')}
+            className={`px-4 py-2 rounded ${tab === 'users' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
+            onClick={() => setTab('users')}
           >
-            Products
+            Users
           </button>
           <button
             className={`px-4 py-2 rounded ${tab === 'messages' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
@@ -45,7 +45,7 @@ export default function EditorDashboard() {
 
         {tab === 'approvals' && <ApprovalsTab user={user} />}
         {tab === 'claims' && <ClaimsTab user={user} />}
-        {tab === 'products' && <ProductsTab user={user} />}
+        {tab === 'users' && <UsersTab user={user} />}
         {tab === 'messages' && <MessagesTab user={user} />}
       </div>
     </Layout>
@@ -259,252 +259,177 @@ function MessagesTab({ user }: { user: any }) {
   );
 }
 
-function ProductsTab({ user }: { user: any }) {
-  const [products, setProducts] = useState<any[]>([]);
+function UsersTab({ user }: { user: any }) {
+  const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    title: '',
-    description: '',
-    price: 0,
-    stock: 0,
-    category: 'electronics',
-    image: 'https://dummyimage.com/300x300/cccccc/969696?text=Product',
-  });
+  const [filterRole, setFilterRole] = useState('all');
+  const [filterOnlineStatus, setFilterOnlineStatus] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [authStatuses, setAuthStatuses] = useState<Map<string, any>>(new Map());
+  const [refreshTime, setRefreshTime] = useState(new Date());
 
   useEffect(() => {
-    const loadProducts = async () => {
+    const loadUsers = async () => {
       try {
-        const editorProducts = await Editor.getEditorProducts(user.uid);
-        setProducts(editorProducts);
+        const allUsers = await Editor.getAllUsers();
+        // Filter out admin users - editors should not see admin info
+        const filteredUsers = (allUsers || []).filter((u: any) => u.role !== 'admin');
+        setUsers(filteredUsers);
       } catch (error) {
-        console.error('Error loading products:', error);
-        alert('Failed to load products');
+        console.error('Error loading users:', error);
+        alert('Failed to load users');
       } finally {
         setLoading(false);
       }
     };
-    loadProducts();
-  }, [user.uid]);
+    loadUsers();
+  }, []);
 
-  const handleAddProduct = async () => {
-    if (!formData.name || !formData.title || !formData.price || formData.price <= 0) {
-      alert('Please fill in required fields');
-      return;
-    }
+  // Refresh online status every 30 seconds
+  useEffect(() => {
+    const refreshAuthStatuses = async () => {
+      try {
+        const authStatusList = await Editor.getAllAuthUserStatuses();
+        const authStatusMap = new Map();
+        authStatusList.forEach((auth: any) => {
+          authStatusMap.set(auth.uid, auth);
+        });
+        setAuthStatuses(authStatusMap);
+      } catch (e) {
+        console.error('Error refreshing auth statuses:', e);
+      }
+      setRefreshTime(new Date());
+    };
+    
+    const interval = setInterval(refreshAuthStatuses, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
-    try {
-      await Editor.addEditorProduct(user.uid, formData);
-      alert('Product added successfully');
-      setFormData({
-        name: '',
-        title: '',
-        description: '',
-        price: 0,
-        stock: 0,
-        category: 'electronics',
-        image: 'https://dummyimage.com/300x300/cccccc/969696?text=Product',
-      });
-      setShowAddForm(false);
-      
-      // Reload products
-      const updated = await Editor.getEditorProducts(user.uid);
-      setProducts(updated);
-    } catch (error) {
-      console.error('Error adding product:', error);
-      alert('Failed to add product');
-    }
+  const formatLastOnline = (lastOnline: any) => {
+    if (!lastOnline) return 'Never';
+    const date = lastOnline.toDate?.() || new Date(lastOnline);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
   };
 
-  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
-
-    for (const file of Array.from(files)) {
-      if (file.size > 5 * 1024 * 1024) {
-        alert(`File ${file.name} is too large. Max size is 5MB.`);
-        continue;
-      }
-
-      if (!file.type.startsWith('image/')) {
-        alert(`File ${file.name} is not an image.`);
-        continue;
-      }
-
-      // Create local preview using FileReader
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const dataUrl = e.target?.result as string;
-        setFormData(prev => ({
-          ...prev,
-          image: dataUrl
-        }));
-        alert(`Image preview loaded for ${file.name}`);
-      };
-      reader.readAsDataURL(file);
-    }
-
-    // Reset file input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+  const isOnline = (lastOnline: any) => {
+    if (!lastOnline) return false;
+    const date = lastOnline.toDate?.() || new Date(lastOnline);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    return diffMins < 5;
   };
 
-  if (loading) return <div>Loading products...</div>;
+  const filteredUsers = users.filter((u) => {
+    const matchesRole = filterRole === 'all' || u.role === filterRole;
+    
+    let matchesOnlineStatus = filterOnlineStatus === 'all';
+    if (filterOnlineStatus === 'online') {
+      const authData = authStatuses.get(u.id);
+      matchesOnlineStatus = authData?.is_online || false;
+    } else if (filterOnlineStatus === 'offline') {
+      const authData = authStatuses.get(u.id);
+      matchesOnlineStatus = !authData?.is_online;
+    }
+    
+    const searchLower = searchTerm.toLowerCase();
+    const matchesSearch =
+      u.full_name.toLowerCase().includes(searchLower) ||
+      u.email.toLowerCase().includes(searchLower);
+    
+    return matchesRole && matchesOnlineStatus && matchesSearch;
+  });
+
+  if (loading) return <div className="text-center py-8">Loading users...</div>;
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h2 className="text-lg font-semibold">My Products ({products.length})</h2>
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          className={`px-4 py-2 rounded text-white ${showAddForm ? 'bg-gray-600' : 'bg-blue-600'}`}
-        >
-          {showAddForm ? 'Cancel' : '+ Add Product'}
-        </button>
+    <div className="space-y-6">
+      <div className="space-y-4">
+        <div>
+          <label className="text-sm font-medium mb-2 block">Search by Name or Email</label>
+          <input
+            placeholder="Type name or email..."
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="border rounded px-3 py-2 w-full"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-sm font-medium mb-2 block">Filter by Role</label>
+            <select
+              value={filterRole}
+              onChange={(e) => setFilterRole(e.target.value)}
+              className="border rounded px-3 py-2 w-full"
+            >
+              <option value="all">All Roles</option>
+              <option value="customer">Customers</option>
+              <option value="seller">Sellers</option>
+              <option value="editor">Editors</option>
+              <option value="content_manager">Content Managers</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium mb-2 block">Filter by Online Status</label>
+            <select
+              value={filterOnlineStatus}
+              onChange={(e) => setFilterOnlineStatus(e.target.value)}
+              className="border rounded px-3 py-2 w-full"
+            >
+              <option value="all">All Users</option>
+              <option value="online">🟢 Online Now</option>
+              <option value="offline">⚫ Offline</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+          <p className="text-sm font-medium text-blue-900">
+            📊 Showing {filteredUsers.length} of {users.length} user{users.length !== 1 ? 's' : ''}
+          </p>
+        </div>
       </div>
 
-      {showAddForm && (
-        <div className="border rounded-lg p-4 bg-gray-50">
-          <div className="space-y-3">
-            <div>
-              <label className="block text-sm font-medium">Product Name *</label>
-              <input
-                placeholder="e.g., Wireless Headphones"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="border w-full px-3 py-2 rounded"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Title *</label>
-              <input
-                placeholder="e.g., Premium Bluetooth Headphones"
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                className="border w-full px-3 py-2 rounded"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium">Description</label>
-              <textarea
-                placeholder="Product details..."
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                className="border w-full px-3 py-2 rounded"
-                rows={3}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium">Category</label>
-                <select
-                  value={formData.category}
-                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  className="border w-full px-3 py-2 rounded"
-                >
-                  <option value="electronics">Electronics</option>
-                  <option value="fashion">Fashion</option>
-                  <option value="home-garden">Home & Garden</option>
-                  <option value="sports">Sports</option>
-                  <option value="beauty">Beauty</option>
-                  <option value="books-media">Books & Media</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium">Price (USD) *</label>
-                <input
-                  type="number"
-                  placeholder="0.00"
-                  min="0"
-                  step="0.01"
-                  value={formData.price}
-                  onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
-                  className="border w-full px-3 py-2 rounded"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium">Stock Quantity</label>
-                <input
-                  type="number"
-                  placeholder="0"
-                  min="0"
-                  value={formData.stock}
-                  onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) || 0 })}
-                  className="border w-full px-3 py-2 rounded"
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-sm font-medium">Product Image</label>
-                <div className="space-y-3">
-                  <div>
-                    <label htmlFor="productFile" className="text-sm text-gray-600">Upload Image from Local Storage</label>
-                    <input
-                      ref={fileInputRef}
-                      id="productFile"
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileSelect}
-                      className="border w-full px-3 py-2 rounded"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Max 5MB - preview appears immediately</p>
-                  </div>
-
-                  <div className="border-t pt-3">
-                    <label htmlFor="productUrl" className="text-sm text-gray-600">Or Use Image URL</label>
-                    <input
-                      id="productUrl"
-                      placeholder="https://example.com/image.jpg"
-                      value={formData.image}
-                      onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-                      className="border w-full px-3 py-2 rounded"
-                    />
+      {filteredUsers.length === 0 ? (
+        <p className="text-gray-500 text-center py-8">No users found matching your filters</p>
+      ) : (
+        <div className="space-y-3">
+          {filteredUsers.map((user_item) => {
+            const authData = authStatuses.get(user_item.id);
+            const isUserOnline = authData?.is_online || false;
+            
+            return (
+              <div key={`${user_item.id}-${refreshTime.getTime()}`} className="border rounded-lg p-4 hover:bg-gray-50">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-lg">{user_item.full_name}</h3>
+                    <p className="text-sm text-gray-600">{user_item.email}</p>
+                    <div className="flex gap-2 mt-2 flex-wrap">
+                      <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                        {user_item.role}
+                      </span>
+                      <span className={`text-xs px-2 py-1 rounded flex items-center ${isUserOnline ? 'bg-green-50 border border-green-500 text-green-700' : 'bg-gray-50 text-gray-700'}`}>
+                        <span className={`h-2 w-2 rounded-full mr-2 inline-block ${isUserOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></span>
+                        {isUserOnline ? '🟢 Online' : `⏱️ ${formatLastOnline(authData?.last_active)}`}
+                      </span>
+                    </div>
                   </div>
                 </div>
-                
-                {formData.image && formData.image !== 'https://dummyimage.com/300x300/cccccc/969696?text=Product' && (
-                  <div className="mt-4 border-2 border-gray-300 rounded-lg overflow-hidden shadow-md hover:shadow-lg transition-shadow">
-                    <div className="bg-gray-100 p-2">
-                      <span className="text-xs text-gray-600">Image Preview</span>
-                    </div>
-                    <img 
-                      src={formData.image} 
-                      alt="Product preview" 
-                      className="w-full h-64 object-cover bg-gray-100"
-                      onError={(e) => { (e.currentTarget as HTMLImageElement).src = 'https://dummyimage.com/300x300/cccccc/969696?text=Invalid+Image'; }}
-                    />
-                  </div>
-                )}
               </div>
-            </div>
-          </div>
-          <button onClick={handleAddProduct} className="w-full mt-4 px-4 py-2 bg-green-600 text-white rounded">
-            Add Product
-          </button>
-        </div>
-      )}
-
-      {products.length === 0 ? (
-        <p className="text-gray-500 text-center py-8">No products yet. Add your first product!</p>
-      ) : (
-        <div className="grid grid-cols-3 gap-4">
-          {products.map((product) => (
-            <div key={product.id} className="border rounded p-3">
-              <img src={product.image} alt={product.name} className="w-full h-32 object-cover rounded mb-2" />
-              <h3 className="font-semibold text-sm">{product.name}</h3>
-              <p className="text-xs text-gray-600 mb-2 line-clamp-1">{product.title}</p>
-              <div className="flex justify-between items-center">
-                <span className="font-bold">${product.price.toFixed(2)}</span>
-                <span className={`text-xs px-2 py-1 rounded ${product.stock > 5 ? 'bg-green-100 text-green-800' : product.stock > 0 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'}`}>
-                  Stock: {product.stock}
-                </span>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

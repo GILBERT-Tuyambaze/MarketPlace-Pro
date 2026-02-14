@@ -381,6 +381,30 @@ export async function logActivity(entry: {
   });
 }
 
+// ============ USER MANAGEMENT ============
+
+export async function getAllUsers() {
+  try {
+    const q = query(collection(db, 'profiles'), orderBy('created_at', 'desc'));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (error) {
+    console.error('Error fetching all users:', error);
+    return [];
+  }
+}
+
+export async function getAllAuthUserStatuses() {
+  try {
+    const q = query(collection(db, 'authentication/users'));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+  } catch (error) {
+    console.error('Error fetching auth statuses:', error);
+    return [];
+  }
+}
+
 export default {
   canContentManagerPerform,
   fetchProducts,
@@ -404,4 +428,6 @@ export default {
   sendOrderMessage,
   fetchOrderMessages,
   logActivity,
+  getAllUsers,
+  getAllAuthUserStatuses,
 };

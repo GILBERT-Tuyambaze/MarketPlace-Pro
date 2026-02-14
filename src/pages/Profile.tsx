@@ -10,7 +10,7 @@ import Layout from '@/components/Layout/Layout';
 import { useAuth } from '@/context/AuthContext';
 import { fetchProductById } from '@/lib/firebaseProducts';
 import * as Customer from '@/lib/customer';
-import { User, Settings, Shield, Bell, Heart, Bookmark, Package } from 'lucide-react';
+import { User, Settings, Shield, Bell, Heart, Bookmark, Package, MessageSquare } from 'lucide-react';
 import { toast } from 'sonner';
 
 const ProfilePage: React.FC = () => {
@@ -163,13 +163,14 @@ const ProfilePage: React.FC = () => {
           </div>
 
           <Tabs defaultValue="profile" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-6">
+            <TabsList className="grid w-full grid-cols-7">
               <TabsTrigger value="profile">Profile</TabsTrigger>
               <TabsTrigger value="saved">Saved Products</TabsTrigger>
               <TabsTrigger value="loved">Loved Products</TabsTrigger>
               <TabsTrigger value="account">Account</TabsTrigger>
               <TabsTrigger value="security">Security</TabsTrigger>
               <TabsTrigger value="notifications">Notifications</TabsTrigger>
+              <TabsTrigger value="claims">Claims</TabsTrigger>
             </TabsList>
 
             {/* Profile Tab */}
@@ -581,6 +582,29 @@ const ProfilePage: React.FC = () => {
                   </div>
 
                   <Button>Save Preferences</Button>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Claims Tab */}
+            <TabsContent value="claims">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <MessageSquare className="h-5 w-5 mr-2" />
+                    My Claims
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-gray-600">
+                    Manage and track all your product claims and support requests. Send messages to our team and get real-time updates on your claims status.
+                  </p>
+                  <Link to="/claims">
+                    <Button className="w-full bg-blue-600 hover:bg-blue-700">
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      View My Claims
+                    </Button>
+                  </Link>
                 </CardContent>
               </Card>
             </TabsContent>

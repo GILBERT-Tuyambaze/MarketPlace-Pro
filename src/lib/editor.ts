@@ -261,6 +261,30 @@ export async function logActivity(entry: { actor_id: string; actor_role: string;
   });
 }
 
+// ============ USER MANAGEMENT ============
+
+export async function getAllUsers() {
+  try {
+    const q = query(collection(db, 'profiles'), orderBy('created_at', 'desc'));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (error) {
+    console.error('Error fetching all users:', error);
+    return [];
+  }
+}
+
+export async function getAllAuthUserStatuses() {
+  try {
+    const q = query(collection(db, 'authentication/users'));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+  } catch (error) {
+    console.error('Error fetching auth statuses:', error);
+    return [];
+  }
+}
+
 // Access control helper (client-side enforcement): returns true if role is allowed
 export function canEditorPerform(role: string) {
   return role === 'editor' || role === 'admin';
@@ -283,4 +307,6 @@ export default {
   decreaseProductStock,
   logActivity,
   canEditorPerform,
+  getAllUsers,
+  getAllAuthUserStatuses,
 };

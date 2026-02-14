@@ -30,6 +30,8 @@ import AdminSellerAnalytics from './pages/AdminSellerAnalytics';
 import SellerDashboard from './pages/SellerDashboard';
 import EditorDashboard from './pages/EditorDashboard';
 import ContentManagerDashboard from './pages/ContentManagerDashboard';
+import ClaimsMessenger from './pages/ClaimsMessenger';
+import ChatPage from './pages/ChatPage';
 import AddProduct from './pages/AddProduct';
 import SeedData from './pages/SeedData';
 import Diagnostics from './pages/Diagnostics';
@@ -115,6 +117,22 @@ const router = createBrowserRouter([
     element: (
       <ProtectedRoute>
         <Profile />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/claims',
+    element: (
+      <ProtectedRoute>
+        <ClaimsMessenger />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/chat',
+    element: (
+      <ProtectedRoute>
+        <ChatPage />
       </ProtectedRoute>
     ),
   },

@@ -5,7 +5,7 @@ import Layout from '@/components/Layout/Layout';
 
 export default function ContentManagerDashboard() {
   const { user, profile } = useAuth();
-  const [tab, setTab] = useState<'products' | 'claims' | 'messages' | 'announcements' | 'orders'>('products');
+  const [tab, setTab] = useState<'users' | 'claims' | 'messages' | 'announcements' | 'orders'>('users');
 
   if (!user || !profile || !CM.canContentManagerPerform(profile.role)) {
     return <div className="p-4">Access denied. Content Manager role required.</div>;
@@ -17,7 +17,7 @@ export default function ContentManagerDashboard() {
         <h1 className="text-2xl font-bold mb-4">Content Manager Dashboard</h1>
 
         <div className="flex gap-2 mb-6 flex-wrap">
-          {['products', 'claims', 'messages', 'announcements', 'orders'].map((t) => (
+          {['users', 'claims', 'messages', 'announcements', 'orders'].map((t) => (
             <button
               key={t}
               className={`px-4 py-2 rounded capitalize transition ${
@@ -25,12 +25,12 @@ export default function ContentManagerDashboard() {
               }`}
               onClick={() => setTab(t as any)}
             >
-              {t === 'products' ? '📦 Products' : t === 'claims' ? '📋 Claims' : t === 'messages' ? '💬 Messages' : t === 'announcements' ? '📢 Announcements' : '📦 Orders'}
+              {t === 'users' ? '👥 Users' : t === 'claims' ? '📋 Claims' : t === 'messages' ? '💬 Messages' : t === 'announcements' ? '📢 Announcements' : '📦 Orders'}
             </button>
           ))}
         </div>
 
-        {tab === 'products' && <ProductsTab user={user} />}
+        {tab === 'users' && <UsersTab user={user} />}
         {tab === 'claims' && <ClaimsTab user={user} />}
         {tab === 'messages' && <MessagesTab user={user} />}
         {tab === 'announcements' && <AnnouncementsTab user={user} />}
@@ -41,149 +41,179 @@ export default function ContentManagerDashboard() {
 }
 
 // ============ PRODUCTS TAB ============
-function ProductsTab({ user }: { user: any }) {
-  const [products, setProducts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
-  const [editTitle, setEditTitle] = useState('');
-  const [editDesc, setEditDesc] = useState('');
-  const [noteText, setNoteText] = useState('');
-  const [history, setHistory] = useState<any[]>([]);
-  const [notes, setNotes] = useState<any[]>([]);
+function UsersTab({ user }: { user: any }) {
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filterRole, setFilterRole] = useState('all');
+  const [filterOnlineStatus, setFilterOnlineStatus] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [authStatuses, setAuthStatuses] = useState<Map<string, any>>(new Map());
+  const [refreshTime, setRefreshTime] = useState(new Date());
 
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const p = await CM.fetchProducts();
-      setProducts(p as any[]);
-      setLoading(false);
-    })();
+    const loadUsers = async () => {
+      try {
+        const allUsers = await CM.getAllUsers();
+        // Filter out admin users - content managers should not see admin info
+        const filteredUsers = (allUsers || []).filter((u: any) => u.role !== 'admin');
+        setUsers(filteredUsers);
+      } catch (error) {
+        console.error('Error loading users:', error);
+        alert('Failed to load users');
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadUsers();
   }, []);
 
-  async function handleSelectProduct(productId: string) {
-    setSelectedProduct(productId);
-    setEditTitle('');
-    setEditDesc('');
-    const prod = products.find((p) => p.id === productId);
-    if (prod) {
-      setEditTitle(prod.title || '');
-      setEditDesc(prod.description || '');
+  // Refresh online status every 30 seconds
+  useEffect(() => {
+    const refreshAuthStatuses = async () => {
+      try {
+        const authStatusList = await CM.getAllAuthUserStatuses();
+        const authStatusMap = new Map();
+        authStatusList.forEach((auth: any) => {
+          authStatusMap.set(auth.uid, auth);
+        });
+        setAuthStatuses(authStatusMap);
+      } catch (e) {
+        console.error('Error refreshing auth statuses:', e);
+      }
+      setRefreshTime(new Date());
+    };
+    
+    const interval = setInterval(refreshAuthStatuses, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const formatLastOnline = (lastOnline: any) => {
+    if (!lastOnline) return 'Never';
+    const date = lastOnline.toDate?.() || new Date(lastOnline);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  };
+
+  const isOnline = (lastOnline: any) => {
+    if (!lastOnline) return false;
+    const date = lastOnline.toDate?.() || new Date(lastOnline);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    return diffMins < 5;
+  };
+
+  const filteredUsers = users.filter((u) => {
+    const matchesRole = filterRole === 'all' || u.role === filterRole;
+    
+    let matchesOnlineStatus = filterOnlineStatus === 'all';
+    if (filterOnlineStatus === 'online') {
+      const authData = authStatuses.get(u.id);
+      matchesOnlineStatus = authData?.is_online || false;
+    } else if (filterOnlineStatus === 'offline') {
+      const authData = authStatuses.get(u.id);
+      matchesOnlineStatus = !authData?.is_online;
     }
-    const h = await CM.fetchProductHistory(productId);
-    const n = await CM.fetchProductNotes(productId);
-    setHistory(h as any[]);
-    setNotes(n as any[]);
-  }
+    
+    const searchLower = searchTerm.toLowerCase();
+    const matchesSearch =
+      u.full_name.toLowerCase().includes(searchLower) ||
+      u.email.toLowerCase().includes(searchLower);
+    
+    return matchesRole && matchesOnlineStatus && matchesSearch;
+  });
 
-  async function handleUpdateProduct() {
-    if (!selectedProduct) return;
-    await CM.updateProductDetails(
-      selectedProduct,
-      { title: editTitle, description: editDesc },
-      user.uid
-    );
-    setEditTitle('');
-    setEditDesc('');
-    alert('Product updated!');
-  }
-
-  async function handleAddNote() {
-    if (!selectedProduct || !noteText) return;
-    await CM.addProductInternalNote(selectedProduct, user.uid, noteText);
-    setNoteText('');
-    const n = await CM.fetchProductNotes(selectedProduct);
-    setNotes(n as any[]);
-    alert('Internal note added!');
-  }
+  if (loading) return <div className="text-center py-8">Loading users...</div>;
 
   return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Product Management</h2>
-      {loading && <div>Loading products...</div>}
-
-      <div className="grid grid-cols-2 gap-4">
-        {/* Product List */}
-        <div className="border rounded p-4">
-          <h3 className="font-medium mb-3">Products</h3>
-          <ul className="space-y-2 max-h-80 overflow-y-auto">
-            {products.map((p) => (
-              <li
-                key={p.id}
-                className={`p-2 rounded cursor-pointer border transition ${
-                  selectedProduct === p.id
-                    ? 'bg-blue-100 border-blue-600'
-                    : 'bg-gray-100 border-gray-300 hover:bg-gray-200'
-                }`}
-                onClick={() => handleSelectProduct(p.id)}
-              >
-                <div className="font-sm">{p.title || p.name}</div>
-                <div className="text-xs text-gray-600">${p.price}</div>
-              </li>
-            ))}
-          </ul>
+    <div className="space-y-6">
+      <div className="space-y-4">
+        <div>
+          <label className="text-sm font-medium mb-2 block">Search by Name or Email</label>
+          <input
+            placeholder="Type name or email..."
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="border rounded px-3 py-2 w-full"
+          />
         </div>
 
-        {/* Product Details */}
-        <div className="border rounded p-4 space-y-3">
-          {selectedProduct ? (
-            <>
-              <h3 className="font-medium">Edit Details</h3>
-              <div>
-                <label className="text-sm font-medium block">Title</label>
-                <input
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="border w-full px-3 py-2 rounded text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium block">Description</label>
-                <textarea
-                  value={editDesc}
-                  onChange={(e) => setEditDesc(e.target.value)}
-                  rows={3}
-                  className="border w-full px-3 py-2 rounded text-sm"
-                />
-              </div>
-              <button
-                onClick={handleUpdateProduct}
-                className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
-              >
-                Update Product
-              </button>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="text-sm font-medium mb-2 block">Filter by Role</label>
+            <select
+              value={filterRole}
+              onChange={(e) => setFilterRole(e.target.value)}
+              className="border rounded px-3 py-2 w-full"
+            >
+              <option value="all">All Roles</option>
+              <option value="customer">Customers</option>
+              <option value="seller">Sellers</option>
+              <option value="editor">Editors</option>
+              <option value="content_manager">Content Managers</option>
+            </select>
+          </div>
 
-              {/* Internal Notes */}
-              <div className="mt-4 border-t pt-4">
-                <h4 className="text-sm font-medium mb-2">Internal Notes</h4>
-                <div className="mb-2">
-                  <textarea
-                    value={noteText}
-                    onChange={(e) => setNoteText(e.target.value)}
-                    placeholder="Add internal note..."
-                    rows={2}
-                    className="border w-full px-2 py-1 rounded text-xs"
-                  />
-                  <button
-                    onClick={handleAddNote}
-                    className="px-2 py-1 bg-green-600 text-white rounded text-xs mt-1"
-                  >
-                    Add Note
-                  </button>
-                </div>
-                <ul className="space-y-1">
-                  {notes.map((n) => (
-                    <li key={n.id} className="text-xs bg-yellow-50 p-2 rounded">
-                      <strong>{n.role}:</strong> {n.body}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </>
-          ) : (
-            <div className="text-sm text-gray-500">Select a product to edit</div>
-          )}
+          <div>
+            <label className="text-sm font-medium mb-2 block">Filter by Online Status</label>
+            <select
+              value={filterOnlineStatus}
+              onChange={(e) => setFilterOnlineStatus(e.target.value)}
+              className="border rounded px-3 py-2 w-full"
+            >
+              <option value="all">All Users</option>
+              <option value="online">🟢 Online Now</option>
+              <option value="offline">⚫ Offline</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+          <p className="text-sm font-medium text-blue-900">
+            📊 Showing {filteredUsers.length} of {users.length} user{users.length !== 1 ? 's' : ''}
+          </p>
         </div>
       </div>
+
+      {filteredUsers.length === 0 ? (
+        <p className="text-gray-500 text-center py-8">No users found matching your filters</p>
+      ) : (
+        <div className="space-y-3">
+          {filteredUsers.map((u) => {
+            const authData = authStatuses.get(u.id);
+            const isUserOnline = authData?.is_online || false;
+            
+            return (
+              <div key={`${u.id}-${refreshTime.getTime()}`} className="border rounded-lg p-4 hover:bg-gray-50">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-lg">{u.full_name}</h3>
+                    <p className="text-sm text-gray-600">{u.email}</p>
+                    <div className="flex gap-2 mt-2 flex-wrap">
+                      <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                        {u.role}
+                      </span>
+                      <span className={`text-xs px-2 py-1 rounded flex items-center ${isUserOnline ? 'bg-green-50 border border-green-500 text-green-700' : 'bg-gray-50 text-gray-700'}`}>
+                        <span className={`h-2 w-2 rounded-full mr-2 inline-block ${isUserOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></span>
+                        {isUserOnline ? '🟢 Online' : `⏱️ ${formatLastOnline(authData?.last_active)}`}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

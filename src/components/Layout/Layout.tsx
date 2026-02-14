@@ -7,9 +7,10 @@ import { AlertCircle, Clock } from 'lucide-react';
 interface LayoutProps {
   children: React.ReactNode;
   className?: string;
+  hideFooter?: boolean;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, className = '' }) => {
+const Layout: React.FC<LayoutProps> = ({ children, className = '', hideFooter = false }) => {
   const { platformSettings } = useAuth();
   useEffect(() => {
     // Scroll animations
@@ -61,7 +62,7 @@ const Layout: React.FC<LayoutProps> = ({ children, className = '' }) => {
       <main className="flex-1">
         {children}
       </main>
-      <Footer />
+      {!hideFooter && <Footer />}
     </div>
   );
 };

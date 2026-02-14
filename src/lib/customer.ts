@@ -601,6 +601,172 @@ export async function markChatMessagesAsRead(
   }
 }
 
+// ============ CLAIMS MESSAGING SYSTEM (Real-time like messenger) ============
+
+export interface ClaimMessage {
+  id: string;
+  claim_id: string;
+  sender_id: string;
+  sender_name: string;
+  sender_role: string;
+  message: string;
+  created_at: Timestamp;
+  read: boolean;
+}
+
+export interface ClaimThread {
+  id: string;
+  title: string;
+  description: string;
+  sender_id: string;
+  sender_name: string;
+  sender_role: string;
+  department: string;
+  claim_type: string;
+  status: string;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  last_message?: string;
+  last_message_at?: Timestamp;
+  unread_count?: number;
+}
+
+// Send initial claim
+export async function submitClaimWithMessage(
+  userId: string,
+  userName: string,
+  title: string,
+  description: string,
+  claimType: string,
+  department: string
+): Promise<string> {
+  try {
+    const claimsRef = collection(db, 'claims');
+    const claimDocRef = await addDoc(claimsRef, {
+      title,
+      description,
+      claim_type: claimType,
+      department,
+      sender_id: userId,
+      sender_name: userName,
+      sender_role: 'customer',
+      status: 'open',
+      created_at: Timestamp.now(),
+      updated_at: Timestamp.now(),
+      last_message: description,
+      last_message_at: Timestamp.now(),
+    });
+
+    // Create initial message in subcollection
+    const messagesRef = collection(claimDocRef, 'messages');
+    await addDoc(messagesRef, {
+      sender_id: userId,
+      sender_name: userName,
+      sender_role: 'customer',
+      message: description,
+      created_at: Timestamp.now(),
+      read: false,
+    });
+
+    return claimDocRef.id;
+  } catch (error) {
+    console.error('Error submitting claim:', error);
+    throw error;
+  }
+}
+
+// Add reply to claim (for customers)
+export async function addClaimReply(
+  claimId: string,
+  userId: string,
+  userName: string,
+  userRole: string,
+  message: string
+): Promise<string> {
+  try {
+    const claimRef = doc(db, 'claims', claimId);
+    const messagesRef = collection(claimRef, 'messages');
+
+    const messageDocRef = await addDoc(messagesRef, {
+      sender_id: userId,
+      sender_name: userName,
+      sender_role: userRole,
+      message,
+      created_at: Timestamp.now(),
+      read: false,
+    });
+
+    // Update claim's last message info
+    await updateDoc(claimRef, {
+      last_message: message,
+      last_message_at: Timestamp.now(),
+      updated_at: Timestamp.now(),
+    });
+
+    return messageDocRef.id;
+  } catch (error) {
+    console.error('Error adding claim reply:', error);
+    throw error;
+  }
+}
+
+// Fetch all claim threads for customer
+export async function fetchCustomerClaims(userId: string): Promise<ClaimThread[]> {
+  try {
+    const q = query(
+      collection(db, 'claims'),
+      where('sender_id', '==', userId),
+      orderBy('updated_at', 'desc')
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as ClaimThread[];
+  } catch (error) {
+    console.error('Error fetching customer claims:', error);
+    return [];
+  }
+}
+
+// Fetch messages for a specific claim
+export async function fetchClaimMessages(claimId: string): Promise<ClaimMessage[]> {
+  try {
+    const claimRef = doc(db, 'claims', claimId);
+    const messagesRef = collection(claimRef, 'messages');
+    const q = query(messagesRef, orderBy('created_at', 'asc'));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      claim_id: claimId,
+      ...doc.data(),
+    })) as ClaimMessage[];
+  } catch (error) {
+    console.error('Error fetching claim messages:', error);
+    return [];
+  }
+}
+
+// Mark claim messages as read
+export async function markClaimMessagesAsRead(claimId: string): Promise<void> {
+  try {
+    const claimRef = doc(db, 'claims', claimId);
+    const messagesRef = collection(claimRef, 'messages');
+    const q = query(messagesRef, where('read', '==', false));
+    const snapshot = await getDocs(q);
+    const batch = writeBatch(db);
+
+    snapshot.docs.forEach((doc) => {
+      batch.update(doc.ref, { read: true });
+    });
+
+    await batch.commit();
+  } catch (error) {
+    console.error('Error marking claim messages as read:', error);
+    throw error;
+  }
+}
+
 export async function deleteChatsWithUser(
   userId: string,
   otherUserId: string
@@ -624,6 +790,46 @@ export async function deleteChatsWithUser(
     await batch.commit();
   } catch (error) {
     console.error('Error deleting chat conversation:', error);
+    throw error;
+  }
+}
+// Search users for chat (non-admin users can't see admins)
+export async function searchUsers(
+  searchQuery: string,
+  isAdmin: boolean = false
+): Promise<Array<{ id: string; name: string; email: string; role: string; avatar?: string }>> {
+  try {
+    const profilesRef = collection(db, 'profiles');
+    const snapshot = await getDocs(profilesRef);
+    
+    const results = snapshot.docs
+      .map((doc) => ({
+        id: doc.id,
+        name: doc.data().full_name || 'Unknown',
+        email: doc.data().email || '',
+        role: doc.data().role || 'customer',
+        avatar: doc.data().avatar_url,
+      }))
+      .filter((user) => {
+        // Don't show self
+        // Filter by search query (name or email)
+        const matchesQuery =
+          user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          user.email.toLowerCase().includes(searchQuery.toLowerCase());
+
+        if (!matchesQuery) return false;
+
+        // Non-admin users can't see admins
+        if (!isAdmin && user.role === 'admin') {
+          return false;
+        }
+
+        return true;
+      });
+
+    return results;
+  } catch (error) {
+    console.error('Error searching users:', error);
     throw error;
   }
 }

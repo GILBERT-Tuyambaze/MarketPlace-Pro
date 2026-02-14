@@ -528,6 +528,9 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
   
   // Authentication status data
   const [authStatuses, setAuthStatuses] = useState<Map<string, any>>(new Map());
+  
+  // Full auth user data for account details
+  const [authUserData, setAuthUserData] = useState<any>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -701,17 +704,19 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
   const handleViewUserDetails = async (user: UserDetail) => {
     try {
       setLoadingRoleData(true);
-      const [loginHist, activityLog, fullUserData, roleData] = await Promise.all([
+      const [loginHist, activityLog, fullUserData, roleData, authData] = await Promise.all([
         admin.fetchUserLoginHistory(user.id),
         admin.fetchUserActivityLogs(user.id),
         fbGetDoc(fbDoc(firebaseDb, 'profiles', user.id)),
         fetchUserRoleData(user.id, user.role),
+        admin.getFullAuthUserData(user.id),
       ]);
       setLoginHistory(loginHist);
       setActivityLogs(activityLog);
       setSelectedUser(user);
       setEditedUser(fullUserData.data() || user);
       setRoleSpecificData(roleData);
+      setAuthUserData(authData);
       setIsEditMode(false);
     } catch (error) {
       console.error('Error loading user details:', error);
@@ -1333,6 +1338,90 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
                   </div>
                 )}
               </div>
+
+              {/* Authentication Information */}
+              {authUserData && (
+                <div className="border-b pb-4">
+                  <h3 className="text-lg font-semibold mb-4">Authentication Information</h3>
+                  
+                  <div className="bg-orange-50 p-4 rounded-lg border border-orange-200 space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-gray-600">User ID (UID)</p>
+                        <p className="font-mono text-sm font-semibold bg-white p-2 rounded border break-all">{authUserData?.uid || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Email</p>
+                        <p className="font-semibold">{authUserData?.email || 'N/A'}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-gray-600">Email Verified</p>
+                        <p className="font-semibold">{authUserData?.email_verified ? '✅ Yes' : '❌ No'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Account Active</p>
+                        <p className="font-semibold">{authUserData?.is_active ? '✅ Active' : '❌ Inactive'}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-gray-600">Created At</p>
+                        <p className="font-semibold text-xs">
+                          {authUserData?.created_at 
+                            ? new Date(authUserData.created_at).toLocaleString() 
+                            : 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Last Sign In</p>
+                        <p className="font-semibold text-xs">
+                          {authUserData?.last_sign_in 
+                            ? new Date(authUserData.last_sign_in).toLocaleString() 
+                            : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {authUserData?.phone_number && (
+                      <div>
+                        <p className="text-sm text-gray-600">Phone Number</p>
+                        <p className="font-semibold">{authUserData?.phone_number}</p>
+                      </div>
+                    )}
+
+                    {authUserData?.ip_address && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-gray-600">IP Address</p>
+                          <p className="font-mono text-sm font-semibold bg-white p-2 rounded border">{authUserData?.ip_address}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Session ID</p>
+                          <p className="font-mono text-sm font-semibold bg-white p-2 rounded border break-all">{authUserData?.session_id || 'N/A'}</p>
+                        </div>
+                      </div>
+                    )}
+
+                    {authUserData?.device_info && (
+                      <div>
+                        <p className="text-sm text-gray-600">Device Info</p>
+                        <p className="font-semibold text-sm">{authUserData?.device_info}</p>
+                      </div>
+                    )}
+
+                    {authUserData?.user_agent && (
+                      <div>
+                        <p className="text-sm text-gray-600">User Agent</p>
+                        <p className="font-semibold text-xs break-all bg-white p-2 rounded border">{authUserData?.user_agent}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Role-Specific Data */}
               {roleSpecificData && (

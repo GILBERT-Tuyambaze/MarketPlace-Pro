@@ -10,18 +10,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import GlobalChat from '@/components/GlobalChat';
-import { 
-  ShoppingCart, 
-  Search, 
-  User, 
-  Menu, 
+import {
+  ShoppingCart,
+  Search,
+  User,
+  Menu,
   LogOut,
   Settings,
   Package,
   Shield,
   Edit,
-  FileText
+  FileText,
+  MessageCircle,
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { useCart } from '@/context/CartContext';
@@ -123,6 +123,11 @@ const Header: React.FC = () => {
             <Link to="/products" className="text-foreground/80 hover:text-foreground transition-colors">
               Products
             </Link>
+            {user && (
+              <Link to="/claims" className="text-foreground/80 hover:text-foreground transition-colors">
+                Claims
+              </Link>
+            )}
             {profile?.role === 'seller' && (
               <Link to="/seller/dashboard" className="text-foreground/80 hover:text-foreground transition-colors">
                 Sell
@@ -132,9 +137,13 @@ const Header: React.FC = () => {
 
           {/* Right side actions */}
           <div className="flex items-center space-x-4">
-            {/* Global Chat */}
+            {/* Chat */}
             {user && (
-              <GlobalChat />
+              <Link to="/chat">
+                <Button variant="ghost" size="icon" title="Messages">
+                  <MessageCircle className="h-5 w-5" />
+                </Button>
+              </Link>
             )}
 
             {/* Cart */}
@@ -162,6 +171,7 @@ const Header: React.FC = () => {
                     <p className="text-sm font-medium">{profile?.full_name}</p>
                     <p className="text-xs text-muted-foreground">{user.email}</p>
                   </div>
+                  
                   <DropdownMenuSeparator />
                   
                   <DropdownMenuItem asChild>

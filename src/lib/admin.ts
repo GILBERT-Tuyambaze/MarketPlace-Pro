@@ -523,7 +523,6 @@ export async function getAuthUserStatus(userId: string) {
         return {
           is_online: data.is_online || false,
           last_active: data.last_active || null,
-          session_id: data.session_id || null,
           device_info: data.device_info || null,
           email: data.email || null,
           uid: userId,
@@ -532,7 +531,6 @@ export async function getAuthUserStatus(userId: string) {
       return {
         is_online: false,
         last_active: null,
-        session_id: null,
         device_info: null,
         uid: userId,
       };
@@ -542,7 +540,6 @@ export async function getAuthUserStatus(userId: string) {
     return {
       is_online: data.is_online || false,
       last_active: data.last_active || null,
-      session_id: data.session_id || null,
       device_info: data.device_info || null,
       email: data.email || null,
       uid: userId,
@@ -552,9 +549,89 @@ export async function getAuthUserStatus(userId: string) {
     return {
       is_online: false,
       last_active: null,
-      session_id: null,
       device_info: null,
       uid: userId,
+    };
+  }
+}
+
+export async function getFullAuthUserData(userId: string) {
+  try {
+    // Try authentication/users collection first
+    const q = query(
+      collection(db, 'authentication/users'),
+      where('uid', '==', userId),
+      limit(1)
+    );
+    const snapResult = await getDocs(q);
+    
+    if (!snapResult.empty) {
+      const authData = snapResult.docs[0].data();
+      return {
+        uid: userId,
+        email: authData.email || null,
+        is_online: authData.is_online || false,
+        last_active: authData.last_active || null,
+        created_at: authData.created_at || null,
+        last_sign_in: authData.last_sign_in || null,
+        email_verified: authData.email_verified || false,
+        phone_number: authData.phone_number || null,
+        device_info: authData.device_info || null,
+        ip_address: authData.ip_address || null,
+        user_agent: authData.user_agent || null,
+        is_active: authData.is_active !== false,
+      };
+    }
+    
+    // Fallback to 'users' collection
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    if (userDoc.exists()) {
+      const data = userDoc.data();
+      return {
+        uid: userId,
+        email: data.email || null,
+        is_online: data.is_online || false,
+        last_active: data.last_active || null,
+        created_at: data.created_at || null,
+        last_sign_in: data.last_sign_in || null,
+        email_verified: data.email_verified || false,
+        phone_number: data.phone_number || null,
+        device_info: data.device_info || null,
+        ip_address: data.ip_address || null,
+        user_agent: data.user_agent || null,
+        is_active: data.is_active !== false,
+      };
+    }
+    
+    return {
+      uid: userId,
+      email: null,
+      is_online: false,
+      last_active: null,
+      created_at: null,
+      last_sign_in: null,
+      email_verified: false,
+      phone_number: null,
+      device_info: null,
+      ip_address: null,
+      user_agent: null,
+      is_active: false,
+    };
+  } catch (error) {
+    console.warn('Error fetching full auth user data:', error);
+    return {
+      uid: userId,
+      email: null,
+      is_online: false,
+      last_active: null,
+      created_at: null,
+      last_sign_in: null,
+      email_verified: false,
+      phone_number: null,
+      device_info: null,
+      ip_address: null,
+      user_agent: null,
+      is_active: false,
     };
   }
 }
@@ -577,11 +654,10 @@ export async function getAllAuthUserStatuses() {
         uid: data.uid || doc.id,
         is_online: data.is_online || false,
         last_active: data.last_active || null,
-        session_id: data.session_id || null,
         device_info: data.device_info || null,
         email: data.email || null,
       };
-    });
+    });;
   } catch (error) {
     console.warn('Error fetching all auth user statuses:', error);
     return [];
@@ -620,4 +696,5 @@ export default {
   logActivity,
   getAuthUserStatus,
   getAllAuthUserStatuses,
+  getFullAuthUserData,
 };

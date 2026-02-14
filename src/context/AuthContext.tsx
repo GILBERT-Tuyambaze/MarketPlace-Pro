@@ -17,6 +17,7 @@ import {
   serverTimestamp as fbServerTimestamp,
   onSnapshot as fbOnSnapshot,
 } from 'firebase/firestore';
+import { toast } from 'sonner';
 
 type Profile = {
   id: string;
@@ -91,6 +92,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, []);
 
+
+
   useEffect(() => {
     // Firebase auth listener
     let profileUnsub: (() => void) | undefined;
@@ -162,7 +165,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // Sign out
   const signOut = async () => {
-    await fbSignOut(firebaseAuth);
+    try {
+      await fbSignOut(firebaseAuth);
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+
     setUser(null);
     setProfile(null);
   };
