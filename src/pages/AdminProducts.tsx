@@ -30,12 +30,9 @@ const AdminProductsPage: React.FC = () => {
       const statsMap: Record<string, any> = {};
       await Promise.all(sellerIds.map(async (sid) => {
         try {
-          const [sold, inCart, info] = await Promise.all([
-            SellerLib.getSellerSoldAndRevenue(sid),
-            SellerLib.getSellerInCartCount(sid),
-            Customer.fetchSellerInfo(sid),
-          ]);
-          statsMap[sid] = { soldCount: sold.soldCount || 0, revenue: sold.revenue || 0, inCart: inCart || 0, info };
+          const s = await SellerLib.getSellerStatsWithCache(sid, 300);
+          const info = await Customer.fetchSellerInfo(sid).catch(() => null);
+          statsMap[sid] = { soldCount: s.soldCount || 0, revenue: s.revenue || 0, inCart: s.inCart || 0, info, cached: !!s.cached };
         } catch (e) {
           console.error('Error computing stats for seller', sid, e);
           statsMap[sid] = { soldCount: 0, revenue: 0, inCart: 0 };

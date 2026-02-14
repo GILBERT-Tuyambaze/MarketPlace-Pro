@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import Layout from '@/components/Layout/Layout';
+import { Link } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { db as firebaseDb } from '@/lib/firebaseClient';
 import * as admin from '@/lib/admin';
@@ -1109,6 +1110,25 @@ const AdminDashboard: React.FC = () => {
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-gray-900">Admin Dashboard</h1>
           <p className="text-gray-600">Manage communications, claims, and user accounts</p>
+        </div>
+
+        {/* Quick Links */}
+        <div className="mb-6 flex gap-3">
+          <Link to="/admin/products">
+            <Button>Product Management</Button>
+          </Link>
+          <Link to="/admin/claims-manager">
+            <Button variant="ghost">Claims Manager</Button>
+          </Link>
+          <Link to="/admin/seller-analytics">
+            <Button variant="ghost">Seller Analytics</Button>
+          </Link>
+          <Link to="/seller/analytics">
+            <Button variant="ghost">My Analytics</Button>
+          </Link>
+          <Link to="/admin/dashboard">
+            <Button variant="outline">Refresh</Button>
+          </Link>
         </div>
 
         {/* Stats */}

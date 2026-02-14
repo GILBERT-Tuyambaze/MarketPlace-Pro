@@ -4,6 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import Layout from '@/components/Layout/Layout';
 import { useAuth } from '@/context/AuthContext';
+import { db } from '@/lib/firebaseClient';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import EditorDashboard from './EditorDashboard';
+import ContentManagerDashboard from './ContentManagerDashboard';
 import { 
   ShoppingBag, 
   Users, 
@@ -45,198 +49,326 @@ const stats = [
 ];
 
 // Buyer Dashboard Component
-const BuyerDashboard = ({ profile }: any) => (
-  <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4">
-    <div className="max-w-6xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold text-gray-900 mb-2">Welcome, {profile?.full_name}! 👋</h1>
-        <p className="text-xl text-gray-600">Happy shopping! Explore our latest products.</p>
-      </div>
+const BuyerDashboard = ({ profile, user }: any) => {
+  const [stats, setStats] = useState({ activeOrders: 0, favoredItems: 0, savedItems: 0 });
+  const [loading, setLoading] = useState(true);
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <Card className="hover:shadow-lg transition-all">
-          <CardContent className="p-6">
-            <ShoppingCart className="h-8 w-8 text-blue-600 mb-2" />
-            <p className="text-gray-600 text-sm">Active Orders</p>
-            <p className="text-2xl font-bold text-gray-900">0</p>
-          </CardContent>
-        </Card>
-        <Card className="hover:shadow-lg transition-all">
-          <CardContent className="p-6">
-            <Star className="h-8 w-8 text-yellow-600 mb-2" />
-            <p className="text-gray-600 text-sm">Favorited Items</p>
-            <p className="text-2xl font-bold text-gray-900">0</p>
-          </CardContent>
-        </Card>
-        <Card className="hover:shadow-lg transition-all">
-          <CardContent className="p-6">
-            <TrendingUp className="h-8 w-8 text-green-600 mb-2" />
-            <p className="text-gray-600 text-sm">Saved for Later</p>
-            <p className="text-2xl font-bold text-gray-900">0</p>
-          </CardContent>
-        </Card>
-        <Card className="hover:shadow-lg transition-all">
-          <CardContent className="p-6">
-            <Shield className="h-8 w-8 text-purple-600 mb-2" />
-            <p className="text-gray-600 text-sm">Account Status</p>
-            <p className="text-xl font-bold text-green-600">Verified</p>
+  useEffect(() => {
+    const loadStats = async () => {
+      if (!user) return;
+      try {
+        // Fetch active orders for this user
+        const ordersSnap = await getDocs(collection(db, 'orders'));
+        const userOrders = ordersSnap.docs.filter((doc: any) => {
+          const data = doc.data() as any;
+          return data.buyer_id === user.uid && data.status !== 'cancelled' && data.status !== 'completed';
+        });
+
+        // Fetch saved products (loved products)
+        const lovedSnap = await getDocs(collection(db, 'loved_products'));
+        const userLoved = lovedSnap.docs.filter((doc: any) => {
+          const data = doc.data() as any;
+          return data.user_id === user.uid;
+        });
+
+        // Fetch saved products
+        const savedSnap = await getDocs(collection(db, 'saved_products'));
+        const userSaved = savedSnap.docs.filter((doc: any) => {
+          const data = doc.data() as any;
+          return data.user_id === user.uid;
+        });
+
+        setStats({
+          activeOrders: userOrders.length,
+          favoredItems: userLoved.length,
+          savedItems: userSaved.length,
+        });
+      } catch (error) {
+        console.error('Error loading buyer stats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadStats();
+  }, [user]);
+
+  return (
+    <Layout>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 px-4">
+        <div className="max-w-6xl mx-auto">
+          <div className="mb-8">
+            <h1 className="text-4xl font-bold text-gray-900 mb-2">Welcome, {profile?.full_name}! 👋</h1>
+            <p className="text-xl text-gray-600">Happy shopping! Explore our latest products.</p>
+          </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+          <Card className="hover:shadow-lg transition-all">
+            <CardContent className="p-6">
+              <ShoppingCart className="h-8 w-8 text-blue-600 mb-2" />
+              <p className="text-gray-600 text-sm">Active Orders</p>
+              <p className="text-2xl font-bold text-gray-900">{loading ? '—' : stats.activeOrders}</p>
+            </CardContent>
+          </Card>
+          <Card className="hover:shadow-lg transition-all">
+            <CardContent className="p-6">
+              <Star className="h-8 w-8 text-yellow-600 mb-2" />
+              <p className="text-gray-600 text-sm">Favorited Items</p>
+              <p className="text-2xl font-bold text-gray-900">{loading ? '—' : stats.favoredItems}</p>
+            </CardContent>
+          </Card>
+          <Card className="hover:shadow-lg transition-all">
+            <CardContent className="p-6">
+              <TrendingUp className="h-8 w-8 text-green-600 mb-2" />
+              <p className="text-gray-600 text-sm">Saved for Later</p>
+              <p className="text-2xl font-bold text-gray-900">{loading ? '—' : stats.savedItems}</p>
+            </CardContent>
+          </Card>
+          <Card className="hover:shadow-lg transition-all">
+            <CardContent className="p-6">
+              <Shield className="h-8 w-8 text-purple-600 mb-2" />
+              <p className="text-gray-600 text-sm">Account Status</p>
+              <p className="text-xl font-bold text-green-600">{profile?.verified ? 'Verified' : 'Pending'}</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card className="mb-8">
+          <CardContent className="p-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">Start Shopping</h2>
+            <p className="text-gray-600 mb-6">Browse thousands of products from verified sellers</p>
+            <Link to="/products">
+              <Button size="lg" className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700">
+                <ShoppingBag className="mr-2 h-5 w-5" />
+                Explore Products
+              </Button>
+            </Link>
           </CardContent>
         </Card>
       </div>
-
-      <Card className="mb-8">
-        <CardContent className="p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Start Shopping</h2>
-          <p className="text-gray-600 mb-6">Browse thousands of products from verified sellers</p>
-          <Link to="/products">
-            <Button size="lg" className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700">
-              <ShoppingBag className="mr-2 h-5 w-5" />
-              Explore Products
-            </Button>
-          </Link>
-        </CardContent>
-      </Card>
     </div>
-  </div>
-);
+    </Layout>
+  );
+};
 
 // Seller Dashboard Component
-const SellerDashboard = ({ profile }: any) => (
-  <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 py-12 px-4">
-    <div className="max-w-6xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold text-gray-900 mb-2">Seller Dashboard - {profile?.full_name}</h1>
-        <p className="text-xl text-gray-600">Status: <span className="font-semibold text-green-600">{profile?.seller_status || 'pending'}</span></p>
-      </div>
+const SellerDashboard = ({ profile, user }: any) => {
+  const [stats, setStats] = useState({ totalProducts: 0, totalOrders: 0, revenue: 0 });
+  const [loading, setLoading] = useState(true);
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <Card className="hover:shadow-lg transition-all">
-          <CardContent className="p-6">
-            <Package className="h-8 w-8 text-green-600 mb-2" />
-            <p className="text-gray-600 text-sm">Total Products</p>
-            <p className="text-2xl font-bold text-gray-900">0</p>
-          </CardContent>
-        </Card>
-        <Card className="hover:shadow-lg transition-all">
-          <CardContent className="p-6">
-            <ShoppingCart className="h-8 w-8 text-blue-600 mb-2" />
-            <p className="text-gray-600 text-sm">Total Orders</p>
-            <p className="text-2xl font-bold text-gray-900">0</p>
-          </CardContent>
-        </Card>
-        <Card className="hover:shadow-lg transition-all">
-          <CardContent className="p-6">
-            <BarChart3 className="h-8 w-8 text-purple-600 mb-2" />
-            <p className="text-gray-600 text-sm">Revenue</p>
-            <p className="text-2xl font-bold text-gray-900">$0</p>
-          </CardContent>
-        </Card>
-        <Card className="hover:shadow-lg transition-all">
-          <CardContent className="p-6">
-            <Star className="h-8 w-8 text-yellow-600 mb-2" />
-            <p className="text-gray-600 text-sm">Rating</p>
-            <p className="text-2xl font-bold text-gray-900">-</p>
-          </CardContent>
-        </Card>
-      </div>
+  useEffect(() => {
+    const loadStats = async () => {
+      if (!user) return;
+      try {
+        // Fetch seller's products
+        const productsSnap = await getDocs(query(collection(db, 'products'), where('seller_id', '==', user.uid)));
+        const totalProducts = productsSnap.size;
 
-      <Card className="mb-8">
-        <CardContent className="p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Quick Actions</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Link to="/add-product">
-              <Button className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700">
-                <Package className="mr-2 h-5 w-5" />
-                Add New Product
-              </Button>
-            </Link>
-            <Link to="/seller-dashboard">
-              <Button variant="outline" className="w-full">
-                <BarChart3 className="mr-2 h-5 w-5" />
-                View Analytics
-              </Button>
-            </Link>
-            <Link to="/profile">
-              <Button variant="outline" className="w-full">
-                <Settings className="mr-2 h-5 w-5" />
-                Edit Profile
-              </Button>
-            </Link>
+        // Fetch seller's orders and revenue
+        const ordersSnap = await getDocs(collection(db, 'orders'));
+        let totalOrders = 0;
+        let revenue = 0;
+        ordersSnap.docs.forEach(doc => {
+          const data = doc.data() as any;
+          if (data.sellers?.includes(user.uid)) {
+            totalOrders++;
+            const items = data.items || [];
+            items.forEach((item: any) => {
+              if ((item.seller_id || item.sellerId) === user.uid && item.status !== 'cancelled') {
+                revenue += (item.price || 0) * (item.quantity || 0);
+              }
+            });
+          }
+        });
+
+        setStats({ totalProducts, totalOrders, revenue });
+      } catch (error) {
+        console.error('Error loading seller stats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadStats();
+  }, [user]);
+
+  return (
+    <Layout>
+      <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 py-12 px-4">
+        <div className="max-w-6xl mx-auto">
+          <div className="mb-8">
+            <h1 className="text-4xl font-bold text-gray-900 mb-2">Seller Dashboard - {profile?.full_name}</h1>
+            <p className="text-xl text-gray-600">Status: <span className="font-semibold text-green-600">{profile?.seller_status || 'pending'}</span></p>
           </div>
-        </CardContent>
-      </Card>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+          <Card className="hover:shadow-lg transition-all">
+            <CardContent className="p-6">
+              <Package className="h-8 w-8 text-green-600 mb-2" />
+              <p className="text-gray-600 text-sm">Total Products</p>
+              <p className="text-2xl font-bold text-gray-900">{loading ? '—' : stats.totalProducts}</p>
+            </CardContent>
+          </Card>
+          <Card className="hover:shadow-lg transition-all">
+            <CardContent className="p-6">
+              <ShoppingCart className="h-8 w-8 text-blue-600 mb-2" />
+              <p className="text-gray-600 text-sm">Total Orders</p>
+              <p className="text-2xl font-bold text-gray-900">{loading ? '—' : stats.totalOrders}</p>
+            </CardContent>
+          </Card>
+          <Card className="hover:shadow-lg transition-all">
+            <CardContent className="p-6">
+              <BarChart3 className="h-8 w-8 text-purple-600 mb-2" />
+              <p className="text-gray-600 text-sm">Revenue</p>
+              <p className="text-2xl font-bold text-gray-900">{loading ? '—' : `$${stats.revenue.toFixed(2)}`}</p>
+            </CardContent>
+          </Card>
+          <Card className="hover:shadow-lg transition-all">
+            <CardContent className="p-6">
+              <Star className="h-8 w-8 text-yellow-600 mb-2" />
+              <p className="text-gray-600 text-sm">Rating</p>
+              <p className="text-2xl font-bold text-gray-900">—</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card className="mb-8">
+          <CardContent className="p-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">Quick Actions</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Link to="/add-product">
+                <Button className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700">
+                  <Package className="mr-2 h-5 w-5" />
+                  Add New Product
+                </Button>
+              </Link>
+              <Link to="/seller/analytics">
+                <Button variant="outline" className="w-full">
+                  <BarChart3 className="mr-2 h-5 w-5" />
+                  View Analytics
+                </Button>
+              </Link>
+              <Link to="/profile">
+                <Button variant="outline" className="w-full">
+                  <Settings className="mr-2 h-5 w-5" />
+                  Edit Profile
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
-  </div>
-);
+    </Layout>
+  );
+};
 
 // Admin Dashboard Component
-const AdminDashboard = ({ profile }: any) => (
-  <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-100 py-12 px-4">
-    <div className="max-w-6xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold text-gray-900 mb-2">Admin Panel - {profile?.full_name}</h1>
-        <p className="text-xl text-gray-600">System Administration & Management</p>
-      </div>
+const AdminDashboard = ({ profile }: any) => {
+  const [stats, setStats] = useState({ totalUsers: 0, totalProducts: 0, totalOrders: 0, platformRevenue: 0 });
+  const [loading, setLoading] = useState(true);
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <Card className="hover:shadow-lg transition-all">
-          <CardContent className="p-6">
-            <Users className="h-8 w-8 text-blue-600 mb-2" />
-            <p className="text-gray-600 text-sm">Total Users</p>
-            <p className="text-2xl font-bold text-gray-900">0</p>
-          </CardContent>
-        </Card>
-        <Card className="hover:shadow-lg transition-all">
-          <CardContent className="p-6">
-            <Package className="h-8 w-8 text-purple-600 mb-2" />
-            <p className="text-gray-600 text-sm">Total Products</p>
-            <p className="text-2xl font-bold text-gray-900">0</p>
-          </CardContent>
-        </Card>
-        <Card className="hover:shadow-lg transition-all">
-          <CardContent className="p-6">
-            <ShoppingCart className="h-8 w-8 text-green-600 mb-2" />
-            <p className="text-gray-600 text-sm">Total Orders</p>
-            <p className="text-2xl font-bold text-gray-900">0</p>
-          </CardContent>
-        </Card>
-        <Card className="hover:shadow-lg transition-all">
-          <CardContent className="p-6">
-            <BarChart3 className="h-8 w-8 text-orange-600 mb-2" />
-            <p className="text-gray-600 text-sm">Platform Revenue</p>
-            <p className="text-2xl font-bold text-gray-900">$0</p>
-          </CardContent>
-        </Card>
-      </div>
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        // Fetch total users from profiles collection
+        const usersSnap = await getDocs(collection(db, 'profiles'));
+        const totalUsers = usersSnap.size;
 
-      <Card className="mb-8">
-        <CardContent className="p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Admin Actions</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Link to="/admin-dashboard">
-              <Button className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700">
-                <BarChart3 className="mr-2 h-5 w-5" />
-                Admin Dashboard
-              </Button>
-            </Link>
-            <Link to="/profile">
-              <Button variant="outline" className="w-full">
-                <Edit className="mr-2 h-5 w-5" />
-                Manage Settings
-              </Button>
-            </Link>
-            <Link to="/products">
-              <Button variant="outline" className="w-full">
-                <Package className="mr-2 h-5 w-5" />
-                Browse Products
-              </Button>
-            </Link>
+        // Fetch total products
+        const productsSnap = await getDocs(collection(db, 'products'));
+        const totalProducts = productsSnap.size;
+
+        // Fetch total orders and calculate revenue
+        const ordersSnap = await getDocs(collection(db, 'orders'));
+        const totalOrders = ordersSnap.size;
+        let platformRevenue = 0;
+        ordersSnap.docs.forEach(doc => {
+          const data = doc.data() as any;
+          platformRevenue += (data.total_amount || data.totalAmount || 0);
+        });
+
+        setStats({ totalUsers, totalProducts, totalOrders, platformRevenue });
+      } catch (error) {
+        console.error('Error loading admin stats:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadStats();
+  }, []);
+
+  return (
+    <Layout>
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-100 py-12 px-4">
+        <div className="max-w-6xl mx-auto">
+          <div className="mb-8">
+            <h1 className="text-4xl font-bold text-gray-900 mb-2">Admin Panel - {profile?.full_name}</h1>
+            <p className="text-xl text-gray-600">System Administration & Management</p>
           </div>
-        </CardContent>
-      </Card>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+          <Card className="hover:shadow-lg transition-all">
+            <CardContent className="p-6">
+              <Users className="h-8 w-8 text-blue-600 mb-2" />
+              <p className="text-gray-600 text-sm">Total Users</p>
+              <p className="text-2xl font-bold text-gray-900">{loading ? '—' : stats.totalUsers}</p>
+            </CardContent>
+          </Card>
+          <Card className="hover:shadow-lg transition-all">
+            <CardContent className="p-6">
+              <Package className="h-8 w-8 text-purple-600 mb-2" />
+              <p className="text-gray-600 text-sm">Total Products</p>
+              <p className="text-2xl font-bold text-gray-900">{loading ? '—' : stats.totalProducts}</p>
+            </CardContent>
+          </Card>
+          <Card className="hover:shadow-lg transition-all">
+            <CardContent className="p-6">
+              <ShoppingCart className="h-8 w-8 text-green-600 mb-2" />
+              <p className="text-gray-600 text-sm">Total Orders</p>
+              <p className="text-2xl font-bold text-gray-900">{loading ? '—' : stats.totalOrders}</p>
+            </CardContent>
+          </Card>
+          <Card className="hover:shadow-lg transition-all">
+            <CardContent className="p-6">
+              <BarChart3 className="h-8 w-8 text-orange-600 mb-2" />
+              <p className="text-gray-600 text-sm">Platform Revenue</p>
+              <p className="text-2xl font-bold text-gray-900">{loading ? '—' : `$${stats.platformRevenue.toFixed(2)}`}</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card className="mb-8">
+          <CardContent className="p-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">Admin Actions</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Link to="/admin/dashboard">
+                <Button className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700">
+                  <BarChart3 className="mr-2 h-5 w-5" />
+                  Admin Dashboard
+                </Button>
+              </Link>
+              <Link to="/profile">
+                <Button variant="outline" className="w-full">
+                  <Edit className="mr-2 h-5 w-5" />
+                  Manage Settings
+                </Button>
+              </Link>
+              <Link to="/products">
+                <Button variant="outline" className="w-full">
+                  <Package className="mr-2 h-5 w-5" />
+                  Browse Products
+                </Button>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
-  </div>
-);
+    </Layout>
+  );
+};
 
 export default function HomePage() {
   const { user, profile, loading } = useAuth();
@@ -252,11 +384,15 @@ export default function HomePage() {
   // Show role-based dashboard if logged in
   if (!loading && user && profile) {
     if (profile.role === 'seller') {
-      return <SellerDashboard profile={profile} />;
+      return <SellerDashboard profile={profile} user={user} />;
     } else if (profile.role === 'admin') {
       return <AdminDashboard profile={profile} />;
     } else if (profile.role === 'customer') {
-      return <BuyerDashboard profile={profile} />;
+      return <BuyerDashboard profile={profile} user={user} />;
+    } else if (profile.role === 'editor') {
+      return <EditorDashboard />;
+    } else if (profile.role === 'content_manager') {
+      return <ContentManagerDashboard />;
     }
   }
 

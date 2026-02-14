@@ -8,6 +8,7 @@ import {
   orderBy,
   addDoc,
   updateDoc,
+  setDoc,
   getDoc,
   collectionGroup,
   serverTimestamp,
@@ -305,6 +306,38 @@ export async function getSellerInCartCount(sellerId: string) {
   }
 }
 
+export async function getSellerStatsWithCache(sellerId: string, ttlSeconds = 300) {
+  try {
+    const cacheRef = doc(db, 'seller_stats_cache', sellerId);
+    const cacheSnap = await getDoc(cacheRef);
+    if (cacheSnap.exists()) {
+      const data = cacheSnap.data() as any;
+      const createdAt = data.created_at?.toDate?.()?.getTime?.();
+      if (createdAt && Date.now() - createdAt < ttlSeconds * 1000) {
+        return {
+          soldCount: data.soldCount || 0,
+          revenue: data.revenue || 0,
+          inCart: data.inCart || 0,
+          cached: true,
+        };
+      }
+    }
+
+    const { soldCount, revenue } = await getSellerSoldAndRevenue(sellerId);
+    const inCart = await getSellerInCartCount(sellerId);
+
+    const payload = { soldCount, revenue, inCart, created_at: serverTimestamp() };
+    await setDoc(cacheRef, payload);
+
+    return { soldCount, revenue, inCart, cached: false };
+  } catch (error) {
+    console.error('Error computing cached seller stats:', error, sellerId);
+    const { soldCount, revenue } = await getSellerSoldAndRevenue(sellerId).catch(() => ({ soldCount: 0, revenue: 0 }));
+    const inCart = await getSellerInCartCount(sellerId).catch(() => 0);
+    return { soldCount, revenue, inCart, cached: false };
+  }
+}
+
 export async function addSellerProduct(sellerId: string, productData: {
   name: string;
   title: string;
@@ -433,6 +466,9 @@ export default {
   fetchUserClaims,
   getClaimDetail,
   getSellerProducts,
+  getSellerSoldAndRevenue,
+  getSellerInCartCount,
+  getSellerStatsWithCache,
   addSellerProduct,
   updateSellerProduct,
   decreaseProductStock,

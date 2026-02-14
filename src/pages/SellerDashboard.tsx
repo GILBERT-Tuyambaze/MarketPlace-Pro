@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import Layout from '@/components/Layout/Layout';
+import { Link } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { db } from '@/lib/firebaseClient';
 import * as sellerLib from '@/lib/seller';
@@ -1076,6 +1077,12 @@ const SellerDashboard: React.FC = () => {
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-gray-900">Seller Dashboard</h1>
           <p className="text-gray-600">Manage orders and communicate with marketplace team</p>
+        </div>
+
+        <div className="mb-6 flex gap-3">
+          <Link to="/seller/analytics"><Button>View Analytics</Button></Link>
+          <Link to="/add-product"><Button variant="ghost">Add Product</Button></Link>
+          <Link to="/seller/dashboard"><Button variant="outline">Refresh</Button></Link>
         </div>
 
         {/* Stats */}
