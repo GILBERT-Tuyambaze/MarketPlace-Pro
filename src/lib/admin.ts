@@ -315,6 +315,69 @@ export async function rejectSeller(
   });
 }
 
+export async function updateUserProfile(
+  userId: string,
+  profileData: Record<string, unknown>,
+  actorId: string
+) {
+  const userRef = doc(db, 'profiles', userId);
+  const updateData: Record<string, unknown> = { ...profileData };
+  delete updateData.id; // Remove id to prevent conflicts
+  
+  await updateDoc(userRef, {
+    ...updateData,
+    profile_updated_at: serverTimestamp(),
+    profile_updated_by: actorId,
+  });
+
+  await logActivity({
+    actor_id: actorId,
+    actor_role: 'admin',
+    action: 'user_profile_updated',
+    target: { type: 'user', id: userId },
+  });
+}
+
+export async function deleteUserAsAdmin(
+  userId: string,
+  actorId: string
+) {
+  // Delete user profile
+  const userRef = doc(db, 'profiles', userId);
+  await deleteDoc(userRef);
+
+  // Delete user's products
+  const productsQ = query(collection(db, 'products'), where('seller_id', '==', userId));
+  const productsDocs = await getDocs(productsQ);
+  
+  for (const productDoc of productsDocs.docs) {
+    await deleteDoc(doc(db, 'products', productDoc.id));
+  }
+
+  // Delete user's orders
+  const ordersQ = query(collection(db, 'orders'), where('buyer_id', '==', userId));
+  const ordersDocs = await getDocs(ordersQ);
+  
+  for (const orderDoc of ordersDocs.docs) {
+    await deleteDoc(doc(db, 'orders', orderDoc.id));
+  }
+
+  // Delete user's messages
+  const messagesQ = query(collection(db, 'messages'), where('sender_id', '==', userId));
+  const messageDocs = await getDocs(messagesQ);
+  
+  for (const messageDoc of messageDocs.docs) {
+    await deleteDoc(doc(db, 'messages', messageDoc.id));
+  }
+
+  await logActivity({
+    actor_id: actorId,
+    actor_role: 'admin',
+    action: 'user_deleted',
+    target: { type: 'user', id: userId },
+  });
+}
+
 export async function getPendingSellerRequests() {
   // Fetch users with role=seller and seller_status=pending or null
   const q = query(
@@ -459,6 +522,8 @@ export default {
   changeUserRole,
   approveSeller,
   rejectSeller,
+  updateUserProfile,
+  deleteUserAsAdmin,
   getPendingSellerRequests,
   getSiteSettings,
   updateSiteSettings,

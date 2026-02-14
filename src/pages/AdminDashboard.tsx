@@ -8,10 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import Layout from '@/components/Layout/Layout';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import { db as firebaseDb } from '@/lib/firebaseClient';
+import { auth as firebaseAuth, db as firebaseDb } from '@/lib/firebaseClient';
 import * as admin from '@/lib/admin';
 import * as seller from '@/lib/seller';
 import {
@@ -504,14 +505,22 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
   const [users, setUsers] = useState<UserDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterRole, setFilterRole] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterOnlineStatus, setFilterOnlineStatus] = useState('all');
+  const [filterLastSeen, setFilterLastSeen] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedUser, setSelectedUser] = useState<UserDetail | null>(null);
+  const [editedUser, setEditedUser] = useState<any>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [loginHistory, setLoginHistory] = useState<any[]>([]);
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
   const [pendingSellerRequests, setPendingSellerRequests] = useState<any[]>([]);
   const [changeRoleUser, setChangeRoleUser] = useState<UserDetail | null>(null);
   const [newRole, setNewRole] = useState('');
   const [roleChangeReason, setRoleChangeReason] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [refreshTime, setRefreshTime] = useState(new Date());
 
   useEffect(() => {
     const loadData = async () => {
@@ -532,15 +541,26 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
     loadData();
   }, []);
 
+  // Refresh online status every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setRefreshTime(new Date());
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleViewUserDetails = async (user: UserDetail) => {
     try {
-      const [loginHist, activityLog] = await Promise.all([
+      const [loginHist, activityLog, fullUserData] = await Promise.all([
         admin.fetchUserLoginHistory(user.id),
         admin.fetchUserActivityLogs(user.id),
+        fbGetDoc(fbDoc(firebaseDb, 'profiles', user.id)),
       ]);
       setLoginHistory(loginHist);
       setActivityLogs(activityLog);
       setSelectedUser(user);
+      setEditedUser(fullUserData.data() || user);
+      setIsEditMode(false);
     } catch (error) {
       console.error('Error loading user details:', error);
       toast.error('Failed to load user details');
@@ -555,6 +575,48 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
     } catch (error) {
       console.error('Error updating status:', error);
       toast.error('Failed to update user status');
+    }
+  };
+
+  const handleSaveUserDetails = async () => {
+    if (!selectedUser || !editedUser) return;
+
+    setIsSaving(true);
+    try {
+      // Update user profile in Firestore
+      const userDocRef = fbDoc(firebaseDb, 'profiles', selectedUser.id);
+      await admin.updateUserProfile(selectedUser.id, editedUser, userId);
+      
+      toast.success('User details updated successfully');
+      setUsers(users.map((u) => (u.id === selectedUser.id ? { ...u, ...editedUser } : u)));
+      setIsEditMode(false);
+    } catch (error) {
+      console.error('Error updating user:', error);
+      toast.error('Failed to update user details');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDeleteUser = async () => {
+    if (!selectedUser) return;
+
+    if (!confirm(`Are you sure you want to delete ${selectedUser.full_name}? This action cannot be undone!`)) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await admin.deleteUserAsAdmin(selectedUser.id, userId);
+      toast.success('User deleted successfully');
+      setUsers(users.filter((u) => u.id !== selectedUser.id));
+      setSelectedUser(null);
+      setEditedUser(null);
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      toast.error('Failed to delete user');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -615,13 +677,73 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
     return `${diffDays}d ago`;
   };
 
+  const isOnline = (lastOnline: any) => {
+    if (!lastOnline) return false;
+    const date = lastOnline.toDate?.() || new Date(lastOnline);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    return diffMins < 5; // Online if active in last 5 minutes
+  };
+
+  const getLastSeenCategory = (lastOnline: any) => {
+    if (!lastOnline) return 'never';
+    const date = lastOnline.toDate?.() || new Date(lastOnline);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    
+    if (diffMins < 5) return 'online';
+    if (diffMins < 60) return 'today';
+    if (diffHours < 24) return 'today';
+    if (diffDays < 7) return 'this_week';
+    if (diffDays < 30) return 'this_month';
+    return 'older';
+  };
+
   const filteredUsers = users.filter((u) => {
+    // Role filter
     const matchesRole = filterRole === 'all' || u.role === filterRole;
+    
+    // Status filter
+    let matchesStatus = filterStatus === 'all';
+    if (filterStatus !== 'all') {
+      const userStatus = u.ban_status || 'active';
+      matchesStatus = userStatus === filterStatus;
+    }
+    
+    // Online status filter
+    let matchesOnlineStatus = filterOnlineStatus === 'all';
+    if (filterOnlineStatus === 'online') {
+      matchesOnlineStatus = isOnline((u as any).last_online_at);
+    } else if (filterOnlineStatus === 'offline') {
+      matchesOnlineStatus = !isOnline((u as any).last_online_at);
+    }
+    
+    // Last seen filter
+    let matchesLastSeen = filterLastSeen === 'all';
+    if (filterLastSeen !== 'all') {
+      const category = getLastSeenCategory((u as any).last_online_at);
+      if (filterLastSeen === 'today') {
+        matchesLastSeen = category === 'online' || category === 'today';
+      } else if (filterLastSeen === 'this_week') {
+        matchesLastSeen = ['online', 'today', 'this_week'].includes(category);
+      } else if (filterLastSeen === 'this_month') {
+        matchesLastSeen = ['online', 'today', 'this_week', 'this_month'].includes(category);
+      } else if (filterLastSeen === 'older') {
+        matchesLastSeen = category === 'older' || category === 'never';
+      }
+    }
+    
+    // Search filter
     const searchLower = searchTerm.toLowerCase();
     const matchesSearch =
       u.full_name.toLowerCase().includes(searchLower) ||
       u.email.toLowerCase().includes(searchLower);
-    return matchesRole && matchesSearch;
+    
+    return matchesRole && matchesStatus && matchesOnlineStatus && matchesLastSeen && matchesSearch;
   });
 
   if (loading) return <div className="text-center py-8">Loading...</div>;
@@ -678,47 +800,115 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
               className="w-full"
             />
           </div>
-          <div>
-            <label className="text-sm font-medium mb-2 block">Filter by Role</label>
-            <Select value={filterRole} onValueChange={setFilterRole}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Users</SelectItem>
-                <SelectItem value="customer">Customers</SelectItem>
-                <SelectItem value="seller">Sellers</SelectItem>
-                <SelectItem value="editor">Editors</SelectItem>
-                <SelectItem value="content_manager">Content Managers</SelectItem>
-                <SelectItem value="admin">Admins</SelectItem>
-              </SelectContent>
-            </Select>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium mb-2 block">Filter by Role</label>
+              <Select value={filterRole} onValueChange={setFilterRole}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Roles</SelectItem>
+                  <SelectItem value="customer">Customers</SelectItem>
+                  <SelectItem value="seller">Sellers</SelectItem>
+                  <SelectItem value="editor">Editors</SelectItem>
+                  <SelectItem value="content_manager">Content Managers</SelectItem>
+                  <SelectItem value="admin">Admins</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-2 block">Filter by Status</label>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="active">🟢 Active</SelectItem>
+                  <SelectItem value="suspended">🟡 Suspended</SelectItem>
+                  <SelectItem value="banned">🔴 Banned</SelectItem>
+                  <SelectItem value="pending">⏳ Pending</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          <p className="text-sm text-gray-600">
-            Showing {filteredUsers.length} of {users.length} user{users.length !== 1 ? 's' : ''}
-          </p>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium mb-2 block">Filter by Online Status</label>
+              <Select value={filterOnlineStatus} onValueChange={setFilterOnlineStatus}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Users</SelectItem>
+                  <SelectItem value="online">🟢 Online Now</SelectItem>
+                  <SelectItem value="offline">⚫ Offline</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium mb-2 block">Filter by Last Seen</label>
+              <Select value={filterLastSeen} onValueChange={setFilterLastSeen}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Time</SelectItem>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="this_week">This Week</SelectItem>
+                  <SelectItem value="this_month">This Month</SelectItem>
+                  <SelectItem value="older">Older</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+            <p className="text-sm font-medium text-blue-900">
+              📊 Showing {filteredUsers.length} of {users.length} user{users.length !== 1 ? 's' : ''}
+            </p>
+            {filteredUsers.length === 0 && users.length > 0 && (
+              <p className="text-xs text-blue-700 mt-1">No users match your filters. Try adjusting your criteria.</p>
+            )}
+          </div>
         </CardContent>
       </Card>
 
       {filteredUsers.map((user) => (
-        <Card key={user.id}>
+        <Card key={`${user.id}-${refreshTime.getTime()}`} className="hover:shadow-lg transition-all">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div className="flex-1">
                 <h3 className="font-semibold text-lg">{user.full_name}</h3>
                 <p className="text-sm text-gray-600">{user.email}</p>
-                <div className="flex gap-2 mt-2">
-                  <Badge>{user.role}</Badge>
-                  {user.ban_status && (
-                    <Badge variant="destructive">{user.ban_status}</Badge>
+                <div className="flex gap-2 mt-2 flex-wrap">
+                  <Badge className="bg-blue-100 text-blue-800">{user.role}</Badge>
+                  
+                  {user.ban_status && user.ban_status !== 'active' && (
+                    <Badge 
+                      variant="destructive"
+                      className={user.ban_status === 'suspended' ? 'bg-yellow-500' : 'bg-red-600'}
+                    >
+                      {user.ban_status === 'suspended' ? '🟡 Suspended' : '🔴 Banned'}
+                    </Badge>
                   )}
-                  <Badge variant="outline" className="bg-blue-50">
-                    Last online: {formatLastOnline((user as any).last_online_at)}
+                  
+                  <Badge 
+                    variant="outline" 
+                    className={isOnline((user as any).last_online_at) ? 'bg-green-50 border-green-500 text-green-700' : 'bg-gray-50 text-gray-700'}
+                  >
+                    <span className={`h-2 w-2 rounded-full mr-2 inline-block ${isOnline((user as any).last_online_at) ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></span>
+                    {isOnline((user as any).last_online_at) ? '🟢 Online' : `📍 ${formatLastOnline((user as any).last_online_at)}`}
                   </Badge>
                 </div>
               </div>
               <div className="flex gap-2 ml-4 flex-wrap">
-                <Button onClick={() => handleViewUserDetails(user)} variant="outline">
+                <Button onClick={() => handleViewUserDetails(user)} variant="outline" size="sm">
                   <Users className="h-4 w-4 mr-1" />
                   Details
                 </Button>
@@ -729,6 +919,7 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
                     setNewRole(user.role);
                   }}
                   variant="outline"
+                  size="sm"
                 >
                   Change Role
                 </Button>
@@ -801,50 +992,484 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
 
       {selectedUser && (
         <Dialog open={!!selectedUser} onOpenChange={() => setSelectedUser(null)}>
-          <DialogContent className="max-w-3xl max-h-96 overflow-y-auto">
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>{selectedUser.full_name} - Account Details</DialogTitle>
+              <DialogTitle className="flex items-center gap-3">
+                <div>
+                  <span className={`h-3 w-3 rounded-full inline-block mr-2 ${isOnline((selectedUser as any).last_online_at) ? 'bg-green-500' : 'bg-gray-400'}`}></span>
+                  {selectedUser.full_name} - Account Details
+                </div>
+              </DialogTitle>
+              <DialogDescription>
+                {isOnline((selectedUser as any).last_online_at) ? '🟢 Currently Online' : `Last active: ${formatLastOnline((selectedUser as any).last_online_at)}`}
+              </DialogDescription>
             </DialogHeader>
+
             <div className="space-y-6">
-              <div>
+              {/* User Profile Information */}
+              <div className="border-b pb-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">User Profile Information</h3>
+                  {!isEditMode && (
+                    <Button onClick={() => setIsEditMode(true)} variant="outline" size="sm">
+                      Edit Profile
+                    </Button>
+                  )}
+                </div>
+
+                {isEditMode ? (
+                  <div className="space-y-4 bg-blue-50 p-4 rounded-lg">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="full_name">Full Name</Label>
+                        <Input
+                          id="full_name"
+                          value={editedUser?.full_name || ''}
+                          onChange={(e) => setEditedUser({ ...editedUser, full_name: e.target.value })}
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="email">Email</Label>
+                        <Input
+                          id="email"
+                          value={editedUser?.email || ''}
+                          onChange={(e) => setEditedUser({ ...editedUser, email: e.target.value })}
+                          className="mt-1"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="phone">Phone</Label>
+                        <Input
+                          id="phone"
+                          value={editedUser?.phone || ''}
+                          onChange={(e) => setEditedUser({ ...editedUser, phone: e.target.value })}
+                          className="mt-1"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="country">Country</Label>
+                        <Input
+                          id="country"
+                          value={editedUser?.country || ''}
+                          onChange={(e) => setEditedUser({ ...editedUser, country: e.target.value })}
+                          className="mt-1"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="address">Address</Label>
+                      <Input
+                        id="address"
+                        value={editedUser?.address || ''}
+                        onChange={(e) => setEditedUser({ ...editedUser, address: e.target.value })}
+                        className="mt-1"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="bio">Bio/Description</Label>
+                      <Textarea
+                        id="bio"
+                        value={editedUser?.bio || ''}
+                        onChange={(e) => setEditedUser({ ...editedUser, bio: e.target.value })}
+                        className="mt-1"
+                        rows={3}
+                      />
+                    </div>
+
+                    <div className="flex gap-2 pt-4">
+                      <Button 
+                        onClick={handleSaveUserDetails} 
+                        disabled={isSaving}
+                        className="flex-1"
+                      >
+                        {isSaving ? 'Saving...' : 'Save Changes'}
+                      </Button>
+                      <Button 
+                        onClick={() => {
+                          setIsEditMode(false);
+                          setEditedUser(selectedUser);
+                        }} 
+                        variant="outline"
+                        className="flex-1"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-gray-600">Full Name</p>
+                        <p className="font-semibold">{editedUser?.full_name || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Email</p>
+                        <p className="font-semibold">{editedUser?.email || 'N/A'}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-gray-600">Phone</p>
+                        <p className="font-semibold">{editedUser?.phone || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Country</p>
+                        <p className="font-semibold">{editedUser?.country || 'N/A'}</p>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Address</p>
+                      <p className="font-semibold">{editedUser?.address || 'N/A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Bio</p>
+                      <p className="font-semibold">{editedUser?.bio || 'N/A'}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 pt-2 border-t">
+                      <div>
+                        <p className="text-sm text-gray-600">Role</p>
+                        <p className="font-semibold capitalize">{editedUser?.role || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Status</p>
+                        <Badge variant={editedUser?.ban_status === 'active' ? 'default' : 'destructive'}>
+                          {editedUser?.ban_status || 'active'}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-gray-600">Verified</p>
+                        <p className="font-semibold">{editedUser?.verified ? '✅ Yes' : '❌ No'}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Created</p>
+                        <p className="font-semibold text-xs">{editedUser?.created_at?.toDate?.().toLocaleDateString() || 'N/A'}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Login History */}
+              <div className="border-b pb-4">
                 <h4 className="font-semibold mb-3">Login History</h4>
-                <div className="space-y-2 max-h-40 overflow-y-auto">
+                <div className="space-y-2 max-h-48 overflow-y-auto bg-gray-50 p-3 rounded-lg">
                   {loginHistory.length === 0 ? (
                     <p className="text-gray-500 text-sm">No login history</p>
                   ) : (
                     loginHistory.map((log, i) => (
-                      <div key={i} className="text-sm border-b pb-2">
-                        <p className="text-gray-700">{log.login_at?.toDate?.().toLocaleString() || 'Unknown'}</p>
+                      <div key={i} className="text-sm border-b pb-2 last:border-b-0">
+                        <p className="text-gray-700 font-medium">{log.login_at?.toDate?.().toLocaleString() || 'Unknown'}</p>
                         {log.ip_address && <p className="text-xs text-gray-500">IP: {log.ip_address}</p>}
+                        {log.device && <p className="text-xs text-gray-500">Device: {log.device}</p>}
                       </div>
                     ))
                   )}
                 </div>
               </div>
 
-              <div>
+              {/* Activity Logs */}
+              <div className="border-b pb-4">
                 <h4 className="font-semibold mb-3">Activity Logs</h4>
-                <div className="space-y-2 max-h-40 overflow-y-auto">
+                <div className="space-y-2 max-h-48 overflow-y-auto bg-gray-50 p-3 rounded-lg">
                   {activityLogs.length === 0 ? (
                     <p className="text-gray-500 text-sm">No activity logs</p>
                   ) : (
                     activityLogs.map((log, i) => (
-                      <div key={i} className="text-sm border-b pb-2">
-                        <p className="text-gray-700"><strong>{log.action}</strong></p>
+                      <div key={i} className="text-sm border-b pb-2 last:border-b-0">
+                        <p className="text-gray-700 font-medium"><strong>{log.action}</strong></p>
                         <p className="text-xs text-gray-500">{log.created_at?.toDate?.().toLocaleString() || 'Unknown'}</p>
+                        {log.details && <p className="text-xs text-gray-600">{log.details}</p>}
                       </div>
                     ))
                   )}
                 </div>
               </div>
 
-              <Button onClick={() => setSelectedUser(null)} className="w-full">
-                Close
-              </Button>
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-4 border-t">
+                <Button 
+                  onClick={() => setSelectedUser(null)}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Close
+                </Button>
+                <Button 
+                  onClick={handleDeleteUser}
+                  variant="destructive"
+                  disabled={isDeleting}
+                  className="flex-1"
+                >
+                  {isDeleting ? 'Deleting...' : '🗑️ Delete User'}
+                </Button>
+              </div>
             </div>
           </DialogContent>
         </Dialog>
       )}
+    </div>
+  );
+};
+
+// ============ CUSTOM CLAIMS TAB (Manage User Roles & Firebase Claims) ============
+
+interface User {
+  id: string;
+  email: string;
+  full_name: string;
+  admin?: boolean;
+}
+
+interface UserClaims {
+  admin: boolean;
+}
+
+const CustomClaimsTab: React.FC<{ userId: string }> = ({ userId }) => {
+  const [users, setUsers] = useState<User[]>([]);
+  const [selectedUid, setSelectedUid] = useState('');
+  const [claims, setClaims] = useState<UserClaims>({ admin: false });
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [adminServerUrl, setAdminServerUrl] = useState('http://localhost:4000');
+  const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const fetchUsers = async () => {
+    try {
+      const q = query(collection(firebaseDb, 'profiles'), orderBy('created_at', 'desc'));
+      const snap = await getDocs(q);
+      const list: User[] = snap.docs.map((d) => ({
+        id: d.id,
+        email: d.data().email || '',
+        full_name: d.data().full_name || 'User',
+        admin: d.data().admin || false,
+      }));
+      setUsers(list);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+      toast.error('Failed to load users');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSelectUser = (uid: string) => {
+    setSelectedUid(uid);
+    const selected = users.find(u => u.id === uid);
+    if (selected) {
+      setClaims({ admin: selected.admin || false });
+    }
+  };
+
+  const handleSetClaims = async () => {
+    if (!selectedUid) {
+      toast.error('Please select a user');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const currentUser = firebaseAuth.currentUser;
+      if (!currentUser) throw new Error('Not authenticated');
+      const idToken = await currentUser.getIdToken();
+
+      const res = await fetch(`${adminServerUrl}/set-claims`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          uid: selectedUid,
+          claims,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to set claims');
+      }
+
+      toast.success('Claims updated successfully');
+      await fetchUsers();
+      setSelectedUid('');
+    } catch (error) {
+      console.error('Error setting claims:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to set claims');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const filteredUsers = users.filter((u) =>
+    u.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    u.email.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  if (loading) {
+    return <div className="text-center py-8">Loading...</div>;
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Configure Admin Server</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label htmlFor="admin-server-url">Admin Server URL</Label>
+            <Input
+              id="admin-server-url"
+              placeholder="http://localhost:4000"
+              value={adminServerUrl}
+              onChange={(e) => setAdminServerUrl(e.target.value)}
+              className="mt-2"
+            />
+            <p className="text-sm text-gray-500 mt-2">
+              Configure the admin endpoint server URL. Default: http://localhost:4000
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Select User</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Input
+            placeholder="Search by name or email..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full"
+          />
+          <div className="space-y-2 max-h-64 overflow-y-auto border rounded-lg p-3 bg-gray-50">
+            {filteredUsers.length === 0 ? (
+              <p className="text-gray-500 text-center py-4">No users found</p>
+            ) : (
+              filteredUsers.map((u) => (
+                <div
+                  key={u.id}
+                  onClick={() => handleSelectUser(u.id)}
+                  className={`p-3 border rounded-lg cursor-pointer transition ${
+                    selectedUid === u.id
+                      ? 'bg-blue-50 border-blue-500 shadow-md'
+                      : 'hover:bg-gray-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-900">{u.full_name}</p>
+                      <p className="text-sm text-gray-500">{u.email || u.id}</p>
+                    </div>
+                    {u.admin && (
+                      <Badge className="bg-red-100 text-red-800">Admin</Badge>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {selectedUid && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardHeader>
+            <CardTitle>Manage Custom Claims</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="border rounded-lg p-4 bg-white">
+              <div className="flex items-start space-x-3">
+                <Checkbox
+                  id="admin-claim"
+                  checked={claims.admin}
+                  onCheckedChange={(checked) =>
+                    setClaims(prev => ({ ...prev, admin: checked === true }))
+                  }
+                />
+                <div className="flex-1">
+                  <Label htmlFor="admin-claim" className="cursor-pointer font-semibold text-base">
+                    Admin Privileges
+                  </Label>
+                  <p className="text-sm text-gray-600 mt-2">
+                    Grants full platform access including:
+                  </p>
+                  <ul className="text-sm text-gray-600 list-disc list-inside mt-2 space-y-1">
+                    <li>Manage all users and their roles</li>
+                    <li>Edit, delete, hide, unhide, approve products</li>
+                    <li>Set custom claims for other users</li>
+                    <li>Access all role dashboards</li>
+                    <li>View platform analytics</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <Button
+              onClick={handleSetClaims}
+              disabled={submitting}
+              className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700"
+              size="lg"
+            >
+              {submitting ? 'Updating...' : 'Update Claims'}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>All Users ({users.length})</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3 max-h-96 overflow-y-auto">
+            {users.length === 0 ? (
+              <p className="text-gray-500 text-center py-8">No users found</p>
+            ) : (
+              users.map((u) => (
+                <div
+                  key={u.id}
+                  className="p-3 border rounded-lg flex items-center justify-between hover:bg-gray-50"
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-semibold text-gray-900">{u.full_name}</h3>
+                      {u.admin && (
+                        <Badge className="bg-red-100 text-red-800">
+                          <Lock className="h-3 w-3 mr-1" />
+                          Admin
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-500">{u.email || u.id}</p>
+                  </div>
+                  <Button
+                    onClick={() => handleSelectUser(u.id)}
+                    variant={selectedUid === u.id ? 'default' : 'outline'}
+                    size="sm"
+                  >
+                    Select
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };
@@ -1172,9 +1797,10 @@ const AdminDashboard: React.FC = () => {
 
         {/* Tabs */}
         <Tabs defaultValue="communication">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="communication">Communication</TabsTrigger>
             <TabsTrigger value="claims">Claims</TabsTrigger>
+            <TabsTrigger value="roles">Manage Roles</TabsTrigger>
             <TabsTrigger value="users">User Management</TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
@@ -1185,6 +1811,10 @@ const AdminDashboard: React.FC = () => {
 
           <TabsContent value="claims">
             {user && <ClaimsTab userId={user.uid} />}
+          </TabsContent>
+
+          <TabsContent value="roles">
+            {user && <CustomClaimsTab userId={user.uid} />}
           </TabsContent>
 
           <TabsContent value="users">
