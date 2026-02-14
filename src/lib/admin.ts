@@ -503,6 +503,91 @@ export async function logActivity(entry: {
   });
 }
 
+// ============ AUTHENTICATION/USERS DATA ============
+
+export async function getAuthUserStatus(userId: string) {
+  try {
+    // Try authentication/users collection first
+    const q = query(
+      collection(db, 'authentication/users'),
+      where('uid', '==', userId),
+      limit(1)
+    );
+    const snapResult = await getDocs(q);
+    
+    // If not found, try 'users' collection as fallback
+    if (snapResult.empty) {
+      const userDoc = await getDoc(doc(db, 'users', userId));
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        return {
+          is_online: data.is_online || false,
+          last_active: data.last_active || null,
+          session_id: data.session_id || null,
+          device_info: data.device_info || null,
+          email: data.email || null,
+          uid: userId,
+        };
+      }
+      return {
+        is_online: false,
+        last_active: null,
+        session_id: null,
+        device_info: null,
+        uid: userId,
+      };
+    }
+    
+    const data = snapResult.docs[0].data();
+    return {
+      is_online: data.is_online || false,
+      last_active: data.last_active || null,
+      session_id: data.session_id || null,
+      device_info: data.device_info || null,
+      email: data.email || null,
+      uid: userId,
+    };
+  } catch (error) {
+    console.warn('Error fetching auth user status:', error);
+    return {
+      is_online: false,
+      last_active: null,
+      session_id: null,
+      device_info: null,
+      uid: userId,
+    };
+  }
+}
+
+export async function getAllAuthUserStatuses() {
+  try {
+    // Try to fetch from authentication/users collection
+    const q = query(collection(db, 'authentication/users'));
+    let snap = await getDocs(q);
+    
+    // If empty, try 'users' collection
+    if (snap.empty) {
+      const q2 = query(collection(db, 'users'));
+      snap = await getDocs(q2);
+    }
+
+    return snap.docs.map(doc => {
+      const data = doc.data();
+      return {
+        uid: data.uid || doc.id,
+        is_online: data.is_online || false,
+        last_active: data.last_active || null,
+        session_id: data.session_id || null,
+        device_info: data.device_info || null,
+        email: data.email || null,
+      };
+    });
+  } catch (error) {
+    console.warn('Error fetching all auth user statuses:', error);
+    return [];
+  }
+}
+
 export default {
   canAdminPerform,
   sendAdminMessage,
@@ -533,4 +618,6 @@ export default {
   fetchUserLoginHistory,
   logLoginAttempt,
   logActivity,
+  getAuthUserStatus,
+  getAllAuthUserStatuses,
 };

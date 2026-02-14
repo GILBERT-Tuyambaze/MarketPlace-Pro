@@ -521,14 +521,30 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [refreshTime, setRefreshTime] = useState(new Date());
+  
+  // Role-specific data
+  const [roleSpecificData, setRoleSpecificData] = useState<any>(null);
+  const [loadingRoleData, setLoadingRoleData] = useState(false);
+  
+  // Authentication status data
+  const [authStatuses, setAuthStatuses] = useState<Map<string, any>>(new Map());
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [allUsers, pendingRequests] = await Promise.all([
+        const [allUsers, pendingRequests, authStatusList] = await Promise.all([
           admin.getAllUsers(),
           admin.getPendingSellerRequests(),
+          admin.getAllAuthUserStatuses(),
         ]);
+        
+        // Create a map of auth statuses keyed by user ID
+        const authStatusMap = new Map();
+        authStatusList.forEach((auth: any) => {
+          authStatusMap.set(auth.uid, auth);
+        });
+        setAuthStatuses(authStatusMap);
+        
         setUsers(allUsers as any);
         setPendingSellerRequests(pendingRequests as any);
       } catch (error) {
@@ -541,29 +557,167 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
     loadData();
   }, []);
 
-  // Refresh online status every 30 seconds
+  // Refresh online status from authentication/users collection every 30 seconds
   useEffect(() => {
-    const interval = setInterval(() => {
+    const refreshAuthStatuses = async () => {
+      try {
+        const authStatusList = await admin.getAllAuthUserStatuses();
+        const authStatusMap = new Map();
+        authStatusList.forEach((auth: any) => {
+          authStatusMap.set(auth.uid, auth);
+        });
+        setAuthStatuses(authStatusMap);
+      } catch (e) {
+        console.error('Error refreshing auth statuses:', e);
+      }
       setRefreshTime(new Date());
-    }, 30000);
+    };
+    
+    const interval = setInterval(refreshAuthStatuses, 30000);
     return () => clearInterval(interval);
   }, []);
 
+  // Fetch role-specific data for comprehensive user profiling
+  const fetchUserRoleData = async (userId: string, role: string) => {
+    try {
+      const roleData: any = { role };
+
+      // Fetch authentication/user data to get real online status
+      try {
+        const authUserRef = query(
+          collection(firebaseDb, 'authentication/users'),
+          where('uid', '==', userId)
+        );
+        const authUserSnap = await getDocs(authUserRef);
+        if (authUserSnap.size > 0) {
+          const authData = authUserSnap.docs[0].data();
+          roleData.auth_online_status = authData.is_online || false;
+          roleData.auth_last_active = authData.last_active || null;
+          roleData.auth_session_id = authData.session_id || null;
+          roleData.auth_device_info = authData.device_info || null;
+        }
+      } catch (e) {
+        // If authentication/users doesn't exist, try 'users' collection
+        try {
+          const userDoc = await fbGetDoc(fbDoc(firebaseDb, 'users', userId));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            roleData.auth_online_status = userData.is_online || false;
+            roleData.auth_last_active = userData.last_active || null;
+            roleData.auth_session_id = userData.session_id || null;
+            roleData.auth_device_info = userData.device_info || null;
+          }
+        } catch (e2) {
+          console.warn('Could not fetch authentication data:', e2);
+        }
+      }
+
+      if (role === 'seller') {
+        // Fetch seller products and stats
+        const productsRef = query(
+          collection(firebaseDb, 'products'),
+          where('seller_id', '==', userId)
+        );
+        const productsSnap = await getDocs(productsRef);
+        const products = productsSnap.docs.map(doc => doc.data());
+
+        roleData.products_count = products.length;
+        roleData.total_products_value = products.reduce((sum: number, p: any) => sum + (p.price || 0), 0);
+
+        // Fetch seller stats from cache
+        const statsDoc = await fbGetDoc(fbDoc(firebaseDb, 'seller_stats_cache', userId));
+        if (statsDoc.exists()) {
+          const stats = statsDoc.data();
+          roleData.total_sales = stats.total_sales || 0;
+          roleData.total_revenue = stats.total_revenue || 0;
+          roleData.average_rating = stats.average_rating || 0;
+          roleData.rating_count = stats.rating_count || 0;
+        }
+      } else if (role === 'customer') {
+        // Fetch customer cart and purchases
+        const ordersRef = query(
+          collection(firebaseDb, 'orders'),
+          where('buyer_id', '==', userId)
+        );
+        const ordersSnap = await getDocs(ordersRef);
+        const orders = ordersSnap.docs.map(doc => doc.data());
+
+        roleData.total_purchases = orders.length;
+        roleData.total_spent = orders.reduce((sum: number, o: any) => sum + (o.total_amount || 0), 0);
+
+        // Fetch cart items (from product collection, querying for user's saved cart)
+        const savedProductsRef = query(
+          collection(firebaseDb, 'saved_products'),
+          where('user_id', '==', userId)
+        );
+        const savedSnap = await getDocs(savedProductsRef);
+        roleData.cart_items = savedSnap.size;
+
+        // Calculate cart value
+        let cartValue = 0;
+        for (const doc of savedSnap.docs) {
+          const saved = doc.data();
+          const productDoc = await fbGetDoc(fbDoc(firebaseDb, 'products', saved.product_id));
+          if (productDoc.exists()) {
+            cartValue += productDoc.data().price || 0;
+          }
+        }
+        roleData.cart_value = cartValue;
+
+        // Fetch loved items
+        const lovedRef = query(
+          collection(firebaseDb, 'loved_products'),
+          where('user_id', '==', userId)
+        );
+        const lovedSnap = await getDocs(lovedRef);
+        roleData.loved_items = lovedSnap.size;
+      } else if (role === 'editor' || role === 'content_manager') {
+        // Fetch editor/manager activity - claims processed and content edited
+        const claimsRef = query(
+          collection(firebaseDb, 'claims'),
+          where('processed_by', '==', userId)
+        );
+        const claimsSnap = await getDocs(claimsRef);
+        roleData.claims_processed = claimsSnap.size;
+
+        // Count approved/rejected
+        let approved = 0, rejected = 0;
+        claimsSnap.docs.forEach(doc => {
+          const claim = doc.data();
+          if (claim.status === 'approved') approved++;
+          if (claim.status === 'rejected') rejected++;
+        });
+        roleData.claims_approved = approved;
+        roleData.claims_rejected = rejected;
+      }
+
+      return roleData;
+    } catch (error) {
+      console.error('Error fetching role-specific data:', error);
+      return { role };
+    }
+  };
+
   const handleViewUserDetails = async (user: UserDetail) => {
     try {
-      const [loginHist, activityLog, fullUserData] = await Promise.all([
+      setLoadingRoleData(true);
+      const [loginHist, activityLog, fullUserData, roleData] = await Promise.all([
         admin.fetchUserLoginHistory(user.id),
         admin.fetchUserActivityLogs(user.id),
         fbGetDoc(fbDoc(firebaseDb, 'profiles', user.id)),
+        fetchUserRoleData(user.id, user.role),
       ]);
       setLoginHistory(loginHist);
       setActivityLogs(activityLog);
       setSelectedUser(user);
       setEditedUser(fullUserData.data() || user);
+      setRoleSpecificData(roleData);
       setIsEditMode(false);
     } catch (error) {
       console.error('Error loading user details:', error);
       toast.error('Failed to load user details');
+    } finally {
+      setLoadingRoleData(false);
     }
   };
 
@@ -898,13 +1052,24 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
                     </Badge>
                   )}
                   
-                  <Badge 
-                    variant="outline" 
-                    className={isOnline((user as any).last_online_at) ? 'bg-green-50 border-green-500 text-green-700' : 'bg-gray-50 text-gray-700'}
-                  >
-                    <span className={`h-2 w-2 rounded-full mr-2 inline-block ${isOnline((user as any).last_online_at) ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></span>
-                    {isOnline((user as any).last_online_at) ? '🟢 Online' : `📍 ${formatLastOnline((user as any).last_online_at)}`}
-                  </Badge>
+                  {/* Real Database Online Status from authentication/users */}
+                  {authStatuses.has(user.id) ? (
+                    <Badge 
+                      variant="outline"
+                      className={authStatuses.get(user.id)?.is_online ? 'bg-green-50 border-green-500 text-green-700' : 'bg-gray-50 text-gray-700'}
+                    >
+                      <span className={`h-2 w-2 rounded-full mr-2 inline-block ${authStatuses.get(user.id)?.is_online ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></span>
+                      {authStatuses.get(user.id)?.is_online ? '🟢 Online (DB)' : `📍 ${formatLastOnline(authStatuses.get(user.id)?.last_active)}`}
+                    </Badge>
+                  ) : (
+                    <Badge 
+                      variant="outline" 
+                      className={isOnline((user as any).last_online_at) ? 'bg-green-50 border-green-500 text-green-700' : 'bg-gray-50 text-gray-700'}
+                    >
+                      <span className={`h-2 w-2 rounded-full mr-2 inline-block ${isOnline((user as any).last_online_at) ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></span>
+                      {isOnline((user as any).last_online_at) ? '🟢 Online' : `📍 ${formatLastOnline((user as any).last_online_at)}`}
+                    </Badge>
+                  )}
                 </div>
               </div>
               <div className="flex gap-2 ml-4 flex-wrap">
@@ -996,12 +1161,23 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-3">
                 <div>
-                  <span className={`h-3 w-3 rounded-full inline-block mr-2 ${isOnline((selectedUser as any).last_online_at) ? 'bg-green-500' : 'bg-gray-400'}`}></span>
+                  {authStatuses.has(selectedUser.id) ? (
+                    <span className={`h-3 w-3 rounded-full inline-block mr-2 ${authStatuses.get(selectedUser.id)?.is_online ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></span>
+                  ) : (
+                    <span className={`h-3 w-3 rounded-full inline-block mr-2 ${isOnline((selectedUser as any).last_online_at) ? 'bg-green-500' : 'bg-gray-400'}`}></span>
+                  )}
                   {selectedUser.full_name} - Account Details
                 </div>
               </DialogTitle>
               <DialogDescription>
-                {isOnline((selectedUser as any).last_online_at) ? '🟢 Currently Online' : `Last active: ${formatLastOnline((selectedUser as any).last_online_at)}`}
+                {authStatuses.has(selectedUser.id)
+                  ? authStatuses.get(selectedUser.id)?.is_online 
+                    ? '🟢 Currently Online (from DB)' 
+                    : `📍 Last active (DB): ${formatLastOnline(authStatuses.get(selectedUser.id)?.last_active)}`
+                  : isOnline((selectedUser as any).last_online_at) 
+                    ? '🟢 Currently Online' 
+                    : `Last active: ${formatLastOnline((selectedUser as any).last_online_at)}`
+                }
               </DialogDescription>
             </DialogHeader>
 
@@ -1157,6 +1333,127 @@ const UserManagementTab: React.FC<{ userId: string }> = ({ userId }) => {
                   </div>
                 )}
               </div>
+
+              {/* Role-Specific Data */}
+              {roleSpecificData && (
+                <div className="border-b pb-4">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    {loadingRoleData && <span className="inline-block animate-spin">⚙️</span>}
+                    Role-Specific Information
+                  </h3>
+
+                  {/* Authentication/Online Status */}
+                  <div className="bg-indigo-50 p-4 rounded-lg mb-4 border border-indigo-200">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <p className="text-sm text-gray-600">Database Online Status</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={`h-3 w-3 rounded-full ${roleSpecificData.auth_online_status ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></span>
+                          <p className="font-semibold">{roleSpecificData.auth_online_status ? '🟢 Online' : '⚫ Offline'}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Last Active</p>
+                        <p className="font-semibold text-sm">
+                          {roleSpecificData.auth_last_active 
+                            ? new Date(roleSpecificData.auth_last_active).toLocaleTimeString() 
+                            : 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Device</p>
+                        <p className="font-semibold text-sm">{roleSpecificData.auth_device_info || 'Unknown'}</p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {selectedUser?.role === 'seller' && (
+                    <div className="bg-blue-50 p-4 rounded-lg space-y-3">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-gray-600">Total Products</p>
+                          <p className="font-semibold text-lg">{roleSpecificData.products_count || 0}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Products Value</p>
+                          <p className="font-semibold text-lg">${(roleSpecificData.total_products_value || 0).toFixed(2)}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-gray-600">Total Sales</p>
+                          <p className="font-semibold text-lg">{roleSpecificData.total_sales || 0}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Total Revenue</p>
+                          <p className="font-semibold text-lg">${(roleSpecificData.total_revenue || 0).toFixed(2)}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-gray-600">Average Rating</p>
+                          <p className="font-semibold text-lg">⭐ {(roleSpecificData.average_rating || 0).toFixed(1)} ({roleSpecificData.rating_count || 0} ratings)</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedUser?.role === 'customer' && (
+                    <div className="bg-green-50 p-4 rounded-lg space-y-3">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-gray-600">Cart Items</p>
+                          <p className="font-semibold text-lg">{roleSpecificData.cart_items || 0}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Cart Value</p>
+                          <p className="font-semibold text-lg">${(roleSpecificData.cart_value || 0).toFixed(2)}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-gray-600">Total Purchases</p>
+                          <p className="font-semibold text-lg">{roleSpecificData.total_purchases || 0}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Total Spent</p>
+                          <p className="font-semibold text-lg">${(roleSpecificData.total_spent || 0).toFixed(2)}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Loved Items</p>
+                        <p className="font-semibold text-lg">❤️ {roleSpecificData.loved_items || 0}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {(selectedUser?.role === 'editor' || selectedUser?.role === 'content_manager') && (
+                    <div className="bg-purple-50 p-4 rounded-lg space-y-3">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-gray-600">Claims Processed</p>
+                          <p className="font-semibold text-lg">{roleSpecificData.claims_processed || 0}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Approved</p>
+                          <p className="font-semibold text-lg text-green-600">✅ {roleSpecificData.claims_approved || 0}</p>
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Rejected</p>
+                        <p className="font-semibold text-lg text-red-600">❌ {roleSpecificData.claims_rejected || 0}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedUser?.role === 'admin' && (
+                    <div className="bg-red-50 p-4 rounded-lg">
+                      <p className="text-sm text-gray-600">Admin - Full System Access</p>
+                      <p className="font-semibold text-lg">🔐 System Administrator</p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Login History */}
               <div className="border-b pb-4">
