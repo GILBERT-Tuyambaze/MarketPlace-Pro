@@ -58,7 +58,7 @@ const SellerAnalytics: React.FC = () => {
 
   return (
     <Layout>
-      <div className="container mx-auto px-6 py-8">
+      <div className="site-container py-8">
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">Seller Analytics</h1>

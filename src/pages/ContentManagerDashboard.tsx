@@ -409,7 +409,6 @@ function NotificationsTab({ user, profile }: { user: any; profile: any }) {
   const [isPublished, setIsPublished] = useState(false);
   const [activeType, setActiveType] = useState<'notification' | 'announcement'>('notification');
 
-  const { fetchNotifications, createNotification } = require('../lib/customer');
 
   useEffect(() => {
     loadNotifications();

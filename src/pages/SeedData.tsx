@@ -58,7 +58,7 @@ export default function SeedDataPage() {
 
   return (
     <Layout>
-      <div className="container mx-auto px-6 py-8 max-w-4xl">
+      <div className="site-container py-8 max-w-4xl">
         <h1 className="text-4xl font-bold mb-8">🌱 Firebase Product Seeder</h1>
         
         <div className="grid gap-6">

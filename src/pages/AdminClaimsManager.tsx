@@ -121,7 +121,7 @@ const AdminClaimsManager: React.FC = () => {
   if (loading) {
     return (
       <Layout>
-        <div className="container mx-auto px-6 py-8">
+        <div className="site-container py-8">
           <div className="flex items-center justify-center min-h-[400px]">
             <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-red-600"></div>
           </div>
@@ -132,7 +132,7 @@ const AdminClaimsManager: React.FC = () => {
 
   return (
     <Layout>
-      <div className="container mx-auto px-6 py-8">
+      <div className="site-container py-8">
         <div className="flex items-center mb-8">
           <div className="bg-gradient-to-r from-red-600 to-orange-600 text-white p-3 rounded-full mr-4">
             <Lock className="h-8 w-8" />

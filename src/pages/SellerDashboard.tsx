@@ -1073,7 +1073,7 @@ const SellerDashboard: React.FC = () => {
 
   return (
     <Layout>
-      <div className="container mx-auto px-6 py-8">
+      <div className="site-container py-8">
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-gray-900">Seller Dashboard</h1>
           <p className="text-gray-600">Manage orders and communicate with marketplace team</p>

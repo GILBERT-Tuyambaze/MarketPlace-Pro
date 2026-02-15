@@ -150,7 +150,7 @@ const ProfilePage: React.FC = () => {
 
   return (
     <Layout>
-      <div className="container mx-auto px-6 py-8">
+      <div className="site-container py-8">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center mb-8">
             <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-3 rounded-full mr-4">

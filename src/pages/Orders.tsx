@@ -281,7 +281,7 @@ const OrdersPage: React.FC = () => {
   if (loading) {
     return (
       <Layout>
-        <div className="container mx-auto px-6 py-8">
+        <div className="site-container py-8">
           <div className="flex items-center justify-center min-h-[400px]">
             <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
           </div>
@@ -292,7 +292,7 @@ const OrdersPage: React.FC = () => {
 
   return (
     <Layout>
-      <div className="container mx-auto px-6 py-8">
+      <div className="site-container py-8">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-4xl font-bold text-gray-900">

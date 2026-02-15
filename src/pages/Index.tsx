@@ -446,7 +446,7 @@ export default function HomePage() {
 
       {/* Stats Section */}
       <section className="py-20 bg-white">
-        <div className="container mx-auto px-6">
+        <div className="site-container">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             {stats.map((stat, index) => (
               <div key={index} className="text-center scroll-animate" style={{ animationDelay: `${index * 100}ms` }}>
@@ -460,7 +460,7 @@ export default function HomePage() {
 
       {/* Categories Section */}
       <section className="py-20 bg-gray-200">
-        <div className="container mx-auto px-6">
+          <div className="site-container">
           <div className="text-center mb-16 scroll-animate">
             <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">Explore Categories</h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
@@ -492,7 +492,7 @@ export default function HomePage() {
 
       {/* Features Section */}
       <section className="py-20 bg-white">
-        <div className="container mx-auto px-6">
+          <div className="site-container">
           <div className="text-center mb-16 scroll-animate">
             <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">Why Choose MarketPlace Pro?</h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
@@ -515,7 +515,7 @@ export default function HomePage() {
 
       {/* CTA Section */}
       <section className="py-20 bg-gradient-to-r from-blue-600 to-purple-600 text-white">
-        <div className="container mx-auto px-6 text-center">
+          <div className="site-container text-center">
           <div className="scroll-animate">
             <h2 className="text-4xl md:text-5xl font-bold mb-6">Ready to Start Your Journey?</h2>
             <p className="text-xl mb-8 max-w-2xl mx-auto opacity-90">

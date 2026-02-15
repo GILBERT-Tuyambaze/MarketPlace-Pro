@@ -140,7 +140,7 @@ const SellerProfilePage: React.FC = () => {
   if (loading) {
     return (
       <Layout>
-        <div className="container mx-auto px-6 py-8">
+        <div className="site-container py-8">
           <div className="flex items-center justify-center min-h-[400px]">
             <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
           </div>
@@ -152,7 +152,7 @@ const SellerProfilePage: React.FC = () => {
   if (!sellerInfo) {
     return (
       <Layout>
-        <div className="container mx-auto px-6 py-8">
+        <div className="site-container py-8">
           <div className="text-center py-12">
             <h2 className="text-2xl font-bold text-gray-900 mb-4">Seller not found</h2>
             <Button asChild>
@@ -166,7 +166,7 @@ const SellerProfilePage: React.FC = () => {
 
   return (
     <Layout>
-      <div className="container mx-auto px-6 py-8">
+      <div className="site-container py-8">
         {/* Back Button */}
         <Button
           variant="ghost"

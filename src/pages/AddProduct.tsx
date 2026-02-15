@@ -422,7 +422,7 @@ const AddProduct: React.FC = () => {
   if (!canAddProduct) {
     return (
       <Layout>
-        <div className="container mx-auto px-6 py-8">
+        <div className="site-container py-8">
           <div className="max-w-2xl mx-auto text-center">
             <div className="bg-red-50 border border-red-200 rounded-lg p-8">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h2>
@@ -439,7 +439,7 @@ const AddProduct: React.FC = () => {
   if (pageLoading) {
     return (
       <Layout>
-        <div className="container mx-auto px-6 py-8">
+        <div className="site-container py-8">
           <div className="max-w-2xl mx-auto text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
             <p className="text-gray-600 mt-4">Loading product...</p>
@@ -451,7 +451,7 @@ const AddProduct: React.FC = () => {
 
   return (
     <Layout>
-      <div className="container mx-auto px-6 py-8">
+      <div className="site-container py-8">
         <div className="max-w-4xl mx-auto">
           <div className="mb-8">
             <h1 className="text-4xl font-bold text-gray-900 mb-4">

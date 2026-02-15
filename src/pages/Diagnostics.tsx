@@ -138,7 +138,7 @@ export default function DiagnosticsPage() {
 
   return (
     <Layout>
-      <div className="container mx-auto px-6 py-8 max-w-4xl">
+      <div className="site-container py-8 max-w-4xl">
         <h1 className="text-4xl font-bold mb-8">🔧 Supabase Diagnostics</h1>
 
         <Card className="mb-6 bg-blue-50 border-blue-200">
