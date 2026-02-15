@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import UserProfileModal from '@/components/UserProfileModal';
 import * as Customer from '@/lib/customer';
-import { Send, Search, Plus, MessageSquare, Phone, MoreVertical } from 'lucide-react';
+import { Send, Search, Plus, MessageSquare, Phone, MoreVertical, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface ChatUser {
@@ -32,8 +33,8 @@ interface ChatMessage {
 interface ChatListItem {
   user_id: string;
   user_name: string;
-  user_email: string;
-  user_role: string;
+  user_email?: string;
+  user_role?: string;
   last_message: string;
   last_message_time: Timestamp;
   unread: boolean;
@@ -52,6 +53,11 @@ const ChatPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [showUserSearch, setShowUserSearch] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [selectedProfileUserId, setSelectedProfileUserId] = useState<string | null>(null);
+  const [selectedProfileUserName, setSelectedProfileUserName] = useState<string | null>(null);
+  const [selectedProfileUserRole, setSelectedProfileUserRole] = useState<string | null>(null);
+  const [forwardingMessageId, setForwardingMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Load chat list
@@ -81,7 +87,7 @@ const ChatPage: React.FC = () => {
 
     const loadMessages = async () => {
       try {
-        const userMessages = await Customer.fetchChatMessages(user.uid, selectedUser.user_id);
+        const userMessages = await Customer.fetchChatMessages(user.uid, selectedUser.user_id, profile?.role);
         if (isMounted) {
           setMessages(userMessages);
           // Mark as read only if this user is the intended recipient
@@ -159,12 +165,11 @@ const ChatPage: React.FC = () => {
         profile?.full_name || user.email || 'User',
         selectedUser.user_id,
         selectedUser.user_name,
-        messageInput,
-        profile?.avatar_url
+        messageInput
       );
 
       setMessageInput('');
-      const userMessages = await Customer.fetchChatMessages(user.uid, selectedUser.user_id);
+      const userMessages = await Customer.fetchChatMessages(user.uid, selectedUser.user_id, profile?.role);
       setMessages(userMessages);
     } catch (error) {
       console.error('Error sending message:', error);
@@ -205,13 +210,13 @@ const ChatPage: React.FC = () => {
   };
 
   const filteredChatList = chatList.filter((item) =>
-    item.user_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.user_email.toLowerCase().includes(searchQuery.toLowerCase())
+    (item.user_name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+    (item.user_email?.toLowerCase() || '').includes(searchQuery.toLowerCase())
   );
 
   const formatTime = (timestamp: Timestamp) => {
     if (!timestamp) return '';
-    const date = timestamp.toDate?.() || new Date(timestamp);
+    const date = typeof timestamp.toDate === 'function' ? timestamp.toDate() : new Date();
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
@@ -228,7 +233,7 @@ const ChatPage: React.FC = () => {
 
   const formatMessageTime = (timestamp: Timestamp) => {
     if (!timestamp) return '';
-    const date = timestamp.toDate?.() || new Date(timestamp);
+    const date = typeof timestamp.toDate === 'function' ? timestamp.toDate() : new Date();
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
@@ -247,6 +252,34 @@ const ChatPage: React.FC = () => {
     }
   };
 
+  // Open user profile modal
+  const handleViewProfile = (userId: string, userName: string, userRole?: string) => {
+    setSelectedProfileUserId(userId);
+    setSelectedProfileUserName(userName);
+    setSelectedProfileUserRole(userRole || '');
+    setShowProfileModal(true);
+  };
+
+  // Forward message to the selected user
+  const handleForwardMessage = async (messageId: string, messageText: string) => {
+    if (!selectedUser || !user) return;
+
+    try {
+      await Customer.forwardChatMessage(
+        messageId,
+        user.uid,
+        profile?.full_name || user.email || 'User',
+        selectedUser.user_id,
+        selectedUser.user_name,
+        messageText
+      );
+      toast.success('Message forwarded');
+    } catch (error) {
+      console.error('Error forwarding message:', error);
+      toast.error('Failed to forward message');
+    }
+  };
+
   if (!user) {
     return (
       <Layout>
@@ -261,7 +294,7 @@ const ChatPage: React.FC = () => {
     <Layout hideFooter={true}>
       <div className="h-[calc(100vh-80px)] flex bg-white">
         {/* Left Sidebar - Chat List */}
-        <div className="w-80 border-r border-gray-200 flex flex-col bg-white">
+        <div className="hidden md:flex w-80 border-r border-gray-200 flex-col bg-white">
           {/* Header */}
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center justify-between mb-4">
@@ -375,24 +408,43 @@ const ChatPage: React.FC = () => {
                     key={msg.id}
                     className={`flex ${msg.sender_id === user.uid ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div
-                      className={`max-w-xs px-4 py-2 rounded-lg break-words ${
-                        msg.sender_id === user.uid
-                          ? 'bg-blue-500 text-white rounded-br-none'
-                          : 'bg-white text-gray-900 border border-gray-200 rounded-bl-none'
-                      }`}
-                    >
-                      {msg.sender_id !== user.uid && (
-                        <p className="text-xs font-semibold mb-1 opacity-75">{msg.sender_name}</p>
-                      )}
-                      <p className="text-sm">{msg.message}</p>
-                      <p
-                        className={`text-xs mt-1 ${
-                          msg.sender_id === user.uid ? 'text-blue-100' : 'text-gray-500'
+                    <div className="group">
+                      <div
+                        className={`max-w-xs px-4 py-2 rounded-lg break-words ${
+                          msg.sender_id === user.uid
+                            ? 'bg-blue-500 text-white rounded-br-none'
+                            : 'bg-white text-gray-900 border border-gray-200 rounded-bl-none'
                         }`}
                       >
-                        {formatMessageTime(msg.created_at)}
-                      </p>
+                        {msg.sender_id !== user.uid && (
+                          <button
+                            onClick={() => handleViewProfile(msg.sender_id, msg.sender_name)}
+                            className="text-xs font-semibold mb-1 opacity-75 hover:opacity-100 cursor-pointer underline"
+                          >
+                            {msg.sender_name}
+                          </button>
+                        )}
+                        <p className="text-sm">{msg.message}</p>
+                        <p
+                          className={`text-xs mt-1 ${
+                            msg.sender_id === user.uid ? 'text-blue-100' : 'text-gray-500'
+                          }`}
+                        >
+                          {formatMessageTime(msg.created_at)}
+                        </p>
+                      </div>
+                      {/* Forward button - visible on hover */}
+                      <div className="flex gap-1 mt-1 opacity-0 group-hover:opacity-100 transition">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleForwardMessage(msg.id, msg.message)}
+                          className="h-6 w-6 p-0 text-xs"
+                          title="Forward message"
+                        >
+                          <Share2 className="h-3 w-3" />
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ))
@@ -478,6 +530,26 @@ const ChatPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* User Profile Modal */}
+      {selectedProfileUserId && (
+        <UserProfileModal
+          userId={selectedProfileUserId}
+          userName={selectedProfileUserName || ''}
+          userRole={selectedProfileUserRole || ''}
+          isOpen={showProfileModal}
+          onClose={() => setShowProfileModal(false)}
+          onStartChat={(userId, userName) => {
+            const chatUser: ChatUser = {
+              id: userId,
+              name: userName,
+              email: '',
+              role: '',
+            };
+            handleStartChat(chatUser);
+          }}
+        />
+      )}
     </Layout>
   );
 };

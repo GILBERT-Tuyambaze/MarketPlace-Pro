@@ -144,10 +144,33 @@ export default function NotificationPage() {
     try {
       await Customer.deleteNotification(notifId);
       setNotifications(notifications.filter((n) => n.id !== notifId));
+      if (selectedNotification?.id === notifId) {
+        setSelectedNotification(null);
+      }
       toast.success('Deleted');
     } catch (error) {
       console.error('Error deleting notification:', error);
       toast.error('Failed to delete');
+    }
+  };
+
+  const handleNotificationClick = async (notif: Notification) => {
+    setSelectedNotification(notif);
+    // Mark as read
+    if (user?.uid) {
+      try {
+        await Customer.markNotificationAsRead(notif.id, user.uid);
+        // Update local state
+        setNotifications(
+          notifications.map((n) =>
+            n.id === notif.id
+              ? { ...n, read_by: [...(n.read_by || []), user.uid] }
+              : n
+          )
+        );
+      } catch (error) {
+        console.error('Error marking as read:', error);
+      }
     }
   };
 
@@ -157,7 +180,7 @@ export default function NotificationPage() {
 
   const formatTime = (timestamp: Timestamp) => {
     if (!timestamp) return '';
-    const date = timestamp.toDate?.() || new Date(timestamp);
+    const date = timestamp.toDate?.() || (timestamp instanceof Date ? timestamp : new Date());
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
@@ -182,6 +205,10 @@ export default function NotificationPage() {
     return type === 'announcement' ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800';
   };
 
+  const isNotificationUnread = (notif: Notification) => {
+    return user?.uid && !(notif.read_by?.includes(user.uid) || false);
+  };
+
   if (!user || !profile) {
     return (
       <Layout>
@@ -191,193 +218,179 @@ export default function NotificationPage() {
   }
 
   return (
-    <Layout hideFooter={canManageNotifications}>
-      <div className="max-w-4xl mx-auto p-6 space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Notifications & Announcements</h1>
-          {canManageNotifications && (
-            <Button
-              onClick={() => {
-                setFormData({ title: '', content: '', is_published: false });
-                setEditingId(null);
-                setShowForm(!showForm);
-              }}
-              className="gap-2"
-            >
-              <Plus className="h-4 w-4" />
-              New Item
-            </Button>
-          )}
-        </div>
-
-        {/* Tab Navigation */}
-        {canManageNotifications && (
-          <div className="flex gap-2 border-b">
-            <button
-              onClick={() => {
-                setActiveTab('notification');
-                setShowForm(false);
-              }}
-              className={`px-4 py-2 font-medium flex items-center gap-2 border-b-2 transition-colors ${
-                activeTab === 'notification'
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Bell className="h-4 w-4" />
-              Notifications
-            </button>
-            <button
-              onClick={() => {
-                setActiveTab('announcement');
-                setShowForm(false);
-              }}
-              className={`px-4 py-2 font-medium flex items-center gap-2 border-b-2 transition-colors ${
-                activeTab === 'announcement'
-                  ? 'border-orange-600 text-orange-600'
-                  : 'border-transparent text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Megaphone className="h-4 w-4" />
-              Announcements
-            </button>
-          </div>
-        )}
-
-        {/* New/Edit Form */}
-        {showForm && canManageNotifications && (
-          <Card className={`border-2 ${activeTab === 'announcement' ? 'border-orange-200 bg-orange-50' : 'border-blue-200 bg-blue-50'}`}>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                {getTypeIcon(activeTab)}
-                {editingId ? `Edit ${activeTab}` : `Create ${activeTab}`}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <label className="text-sm font-medium">Title</label>
-                <Input
-                  placeholder="Title..."
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="mt-1"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium">Content</label>
-                <Textarea
-                  placeholder="Content..."
-                  value={formData.content}
-                  onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                  rows={4}
-                  className="mt-1"
-                />
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  id="published"
-                  checked={formData.is_published}
-                  onChange={(e) => setFormData({ ...formData, is_published: e.target.checked })}
-                  className="rounded"
-                />
-                <label htmlFor="published" className="text-sm font-medium">
-                  Publish immediately
-                </label>
-              </div>
-
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleSubmitNotification}
-                  disabled={submitting}
-                  className="flex-1"
-                >
-                  {submitting ? 'Saving...' : editingId ? 'Update' : 'Create'}
-                </Button>
+    <Layout hideFooter={true}>
+      <div className="flex h-[calc(100vh-80px)] bg-background">
+        {/* Left Panel - Notification List */}
+        <div className="w-96 border-r bg-background flex flex-col">
+          {/* Header */}
+          <div className="p-4 border-b space-y-3">
+            <div className="flex items-center justify-between">
+              <h1 className="text-xl font-bold">Notifications</h1>
+              {canManageNotifications && (
                 <Button
                   onClick={() => {
-                    setShowForm(false);
-                    setEditingId(null);
                     setFormData({ title: '', content: '', is_published: false });
+                    setEditingId(null);
+                    setShowForm(!showForm);
                   }}
+                  size="sm"
                   variant="outline"
-                  className="flex-1"
+                  title="Create new"
                 >
-                  Cancel
+                  <Plus className="h-4 w-4" />
                 </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+              )}
+            </div>
 
-        {/* Items List */}
-        {loading ? (
-          <div className="text-center py-12">Loading...</div>
-        ) : filteredNotifications.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            No {activeTab}s yet
+            {/* Tabs */}
+            {canManageNotifications && (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setActiveTab('notification')}
+                  className={`px-3 py-1 text-sm rounded transition ${
+                    activeTab === 'notification'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-200 hover:bg-gray-300'
+                  }`}
+                >
+                  🔔 Notifications
+                </button>
+                <button
+                  onClick={() => setActiveTab('announcement')}
+                  className={`px-3 py-1 text-sm rounded transition ${
+                    activeTab === 'announcement'
+                      ? 'bg-orange-600 text-white'
+                      : 'bg-gray-200 hover:bg-gray-300'
+                  }`}
+                >
+                  📢 Announcements
+                </button>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="space-y-4">
-            {filteredNotifications.map((notif) => (
-              <Card key={notif.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="pt-6">
-                  <div className="flex justify-between items-start gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="flex items-center gap-2">
-                          {getTypeIcon(notif.type)}
-                          <h3 className="text-lg font-semibold">{notif.title}</h3>
+
+          {/* Notification List */}
+          <div className="flex-1 overflow-y-auto">
+            {loading ? (
+              <div className="p-4 text-center text-muted-foreground">Loading...</div>
+            ) : filteredNotifications.length === 0 ? (
+              <div className="p-4 text-center text-muted-foreground">No {activeTab}s</div>
+            ) : (
+              <div className="divide-y">
+                {filteredNotifications.map((notif) => {
+                  const isUnread = isNotificationUnread(notif);
+                  const isSelected = selectedNotification?.id === notif.id;
+                  
+                  return (
+                    <div
+                      key={notif.id}
+                      onClick={() => handleNotificationClick(notif)}
+                      className={`p-3 cursor-pointer transition hover:bg-muted border-l-4 ${
+                        isSelected ? 'bg-muted border-l-blue-600' : 'border-l-transparent hover:border-l-gray-300'
+                      } ${isUnread ? 'bg-blue-50' : ''}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm truncate ${isUnread ? 'font-bold' : 'font-medium'}`}>
+                            {notif.title}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {notif.content.split('\n')[0]}
+                          </p>
                         </div>
-                        {notif.is_published ? (
-                          <Badge className="bg-green-600">Published</Badge>
-                        ) : (
-                          <Badge variant="secondary">Draft</Badge>
-                        )}
-                        <Badge className={getTypeColor(notif.type)}>
-                          {notif.type.charAt(0).toUpperCase() + notif.type.slice(1)}
-                        </Badge>
+                        {isUnread && <div className="h-2 w-2 bg-blue-600 rounded-full mt-1 flex-shrink-0" />}
                       </div>
-                      <p className="text-foreground/80 mb-3 whitespace-pre-wrap">
-                        {notif.content}
-                      </p>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>
-                          By {notif.creator_name} ({notif.creator_role})
-                        </span>
-                        <span>{formatTime(notif.updated_at)}</span>
+                      <div className="flex items-center justify-between mt-2">
+                        <div className="flex gap-1">
+                          {notif.type === 'announcement' ? (
+                            <Badge className="text-xs bg-orange-100 text-orange-800">Announcement</Badge>
+                          ) : (
+                            <Badge className="text-xs bg-blue-100 text-blue-800">Notification</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{formatTime(notif.updated_at)}</p>
                       </div>
                     </div>
-
-                    {canEditOrDelete(notif) && (
-                      <div className="flex gap-2">
-                        <Button
-                          onClick={() => handleEditNotification(notif)}
-                          size="sm"
-                          variant="outline"
-                          title="Edit"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          onClick={() => handleDeleteNotification(notif.id)}
-                          size="sm"
-                          variant="outline"
-                          className="text-red-600 hover:text-red-700"
-                          title="Delete"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
+        </div>
+
+        {/* Right Panel - Email Detail View */}
+        <div className="flex-1 flex flex-col bg-background">
+          {selectedNotification ? (
+            <>
+              {/* Email Header */}
+              <div className="border-b p-6 space-y-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <h2 className="text-2xl font-bold">{selectedNotification.title}</h2>
+                    <div className="flex gap-2 mt-2">
+                      <Badge className={getTypeColor(selectedNotification.type)}>
+                        {selectedNotification.type.charAt(0).toUpperCase() + selectedNotification.type.slice(1)}
+                      </Badge>
+                      {selectedNotification.is_published ? (
+                        <Badge className="bg-green-600">Published</Badge>
+                      ) : (
+                        <Badge variant="secondary">Draft</Badge>
+                      )}
+                    </div>
+                  </div>
+
+                  {canEditOrDelete(selectedNotification) && (
+                    <div className="flex gap-1">
+                      <Button
+                        onClick={() => handleEditNotification(selectedNotification)}
+                        size="sm"
+                        variant="ghost"
+                        title="Edit"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        onClick={() => handleDeleteNotification(selectedNotification.id)}
+                        size="sm"
+                        variant="ghost"
+                        className="text-red-600 hover:text-red-700"
+                        title="Delete"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <p>
+                    <span className="font-medium">From:</span> {selectedNotification.creator_name} ({selectedNotification.creator_role})
+                  </p>
+                  <p>
+                    <span className="font-medium">Date:</span> {selectedNotification.updated_at?.toDate?.().toLocaleString()}
+                  </p>
+                  <p>
+                    <span className="font-medium">Readers:</span> {selectedNotification.read_by?.length || 0}
+                  </p>
+                </div>
+              </div>
+
+              {/* Email Body */}
+              <div className="flex-1 overflow-y-auto p-6 text-foreground">
+                <div className="prose prose-sm max-w-none whitespace-pre-wrap break-words">
+                  {selectedNotification.content}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-muted-foreground">
+              <div className="text-center">
+                <Bell className="h-12 w-12 mx-auto mb-2 opacity-20" />
+                <p>Select a {activeTab} to view</p>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </Layout>
   );

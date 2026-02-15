@@ -89,8 +89,7 @@ const GlobalChat: React.FC<GlobalChatProps> = ({ className = '' }) => {
         profile?.full_name || user.email || 'User',
         selectedUser.user_id,
         selectedUser.user_name,
-        messageText,
-        profile?.avatar_url || undefined
+        messageText
       );
 
       setMessageText('');

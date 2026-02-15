@@ -15,6 +15,7 @@ import { useAuth } from '@/context/AuthContext';
 import { auth as firebaseAuth, db as firebaseDb } from '@/lib/firebaseClient';
 import * as admin from '@/lib/admin';
 import * as seller from '@/lib/seller';
+import * as Customer from '@/lib/customer';
 import {
   collection,
   getDocs,
@@ -1628,9 +1629,6 @@ const AdminNotificationsTab: React.FC<{ userId: string; profile: any; type: 'not
   const [content, setContent] = useState('');
   const [isPublished, setIsPublished] = useState(false);
 
-  // Dynamic imports
-  const Customer = require('../lib/customer');
-
   useEffect(() => {
     loadItems();
   }, [type]);
@@ -2263,7 +2261,7 @@ const SettingsTab: React.FC<{ userId: string }> = ({ userId }) => {
 // ============ MAIN COMPONENT ============
 
 const AdminDashboard: React.FC = () => {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [stats, setStats] = useState({ totalUsers: 0, totalClaims: 0, totalMessages: 0 });
 
   useEffect(() => {

@@ -492,15 +492,24 @@ export async function sendChatMessage(
 
 export async function fetchChatMessages(
   userId: string,
-  otherUserId: string
+  otherUserId: string,
+  userRole?: string
 ): Promise<ChatMessage[]> {
   try {
-    // Fetch messages where user is sender or recipient
-    const constraints: QueryConstraint[] = [
-      orderBy('created_at', 'asc'),
-    ];
+    // For admins viewing conversations they're not involved in (otherUserId contains |)
+    // Parse the user IDs if admin is viewing a third-party conversation
+    let user1: string, user2: string;
 
-    // Build a query that gets messages between two users
+    if (otherUserId.includes('|')) {
+      // Admin viewing conversation between two other users
+      [user1, user2] = otherUserId.split('|');
+    } else {
+      // Regular user or admin viewing conversation involving themselves
+      user1 = userId;
+      user2 = otherUserId;
+    }
+
+    // Fetch all messages and filter for the conversation
     const messagesQuery = query(
       collection(db, 'chat_messages')
     );
@@ -513,8 +522,8 @@ export async function fetchChatMessages(
       } as ChatMessage))
       .filter((msg) => {
         const isBetweenUsers =
-          (msg.sender_id === userId && msg.recipient_id === otherUserId) ||
-          (msg.sender_id === otherUserId && msg.recipient_id === userId);
+          (msg.sender_id === user1 && msg.recipient_id === user2) ||
+          (msg.sender_id === user2 && msg.recipient_id === user1);
         return isBetweenUsers;
       })
       .sort((a, b) => (a.created_at as Timestamp).toMillis() - (b.created_at as Timestamp).toMillis());
@@ -529,53 +538,86 @@ export async function fetchChatMessages(
 export interface ChatListItem {
   user_id: string;
   user_name: string;
+  user_email?: string;
+  user_role?: string;
   last_message: string;
-  last_message_at: Timestamp;
+  last_message_time: Timestamp;
   unread: boolean;
+  avatar?: string;
 }
 
 export async function fetchUserChatList(userId: string, userRole?: string): Promise<ChatListItem[]> {
   try {
-    // Fetch all conversations for user
+    // Fetch all conversations
     // Admins can see ALL conversations, non-admins see only received messages
     const messagesQuery = query(collection(db, 'chat_messages'));
     const snapshot = await getDocs(messagesQuery);
 
     const conversations: { [key: string]: ChatListItem } = {};
+    const isAdmin = userRole === 'admin';
 
     snapshot.docs.forEach((doc) => {
       const data = doc.data() as ChatMessage;
       
       // Determine if this conversation should be visible
       const isForThisUser = data.recipient_id === userId;
-      const isAdmin = userRole === 'admin';
       const shouldShow = isAdmin || isForThisUser;
       
       if (shouldShow) {
-        const otherUserId = data.sender_id === userId ? data.recipient_id : data.sender_id;
-        const otherUserName = data.sender_id === userId ? data.recipient_name : data.sender_name;
+        // For non-admins: determine other user from sender/recipient
+        // For admins: can see conversations between any users, show both participants
+        let conversationKey: string;
+        let otherUserId: string;
+        let otherUserName: string;
 
-        if (!conversations[otherUserId]) {
-          conversations[otherUserId] = {
+        if (isAdmin) {
+          // Admin can see this conversation - show it based on all participants
+          // Use sender-recipient pair as key to keep them unified
+          const key1 = `${data.sender_id}_${data.recipient_id}`;
+          const key2 = `${data.recipient_id}_${data.sender_id}`;
+          conversationKey = key1 < key2 ? key1 : key2;
+          
+          // Display the other participant(s) - for simplicity, alternate display
+          if (data.sender_id === userId || data.recipient_id === userId) {
+            // Admin is involved in this message
+            otherUserId = data.sender_id === userId ? data.recipient_id : data.sender_id;
+            otherUserName = data.sender_id === userId ? data.recipient_name : data.sender_name;
+          } else {
+            // Admin is viewing a conversation they're not involved in
+            // Show it as a conversation between sender and recipient
+            conversationKey = `${data.sender_id}_${data.recipient_id}`;
+            otherUserId = `${data.sender_id}|${data.recipient_id}`;
+            otherUserName = `${data.sender_name} ↔ ${data.recipient_name}`;
+          }
+        } else {
+          // Regular user: only show as conversation with the sender
+          otherUserId = data.sender_id;
+          otherUserName = data.sender_name;
+          conversationKey = `${data.sender_id}`;
+        }
+
+        if (!conversations[conversationKey]) {
+          conversations[conversationKey] = {
             user_id: otherUserId,
             user_name: otherUserName,
             last_message: data.message,
-            last_message_at: data.created_at,
+            last_message_time: data.created_at,
             unread: !data.read && data.recipient_id === userId,
           };
         } else {
           // Update if this message is newer
-          const currentLastTime = conversations[otherUserId].last_message_at;
+          const currentLastTime = conversations[conversationKey].last_message_time;
           if (data.created_at.toMillis() > currentLastTime.toMillis()) {
-            conversations[otherUserId].last_message = data.message;
-            conversations[otherUserId].last_message_at = data.created_at;
+            conversations[conversationKey].last_message = data.message;
+            conversations[conversationKey].last_message_time = data.created_at;
+            conversations[conversationKey].unread = !data.read && data.recipient_id === userId;
           }
         }
       }
     });
 
     return Object.values(conversations)
-      .sort((a, b) => b.last_message_at.toMillis() - a.last_message_at.toMillis());
+      .sort((a, b) => b.last_message_time.toMillis() - a.last_message_time.toMillis());
   } catch (error) {
     console.error('Error fetching chat list:', error);
     return [];
@@ -629,6 +671,11 @@ export interface ClaimMessage {
   message: string;
   created_at: Timestamp;
   read: boolean;
+  deleted?: boolean;
+  edited?: boolean;
+  edited_at?: Timestamp;
+  deleted_at?: Timestamp;
+  forwarded_from?: string;
 }
 
 export interface ClaimThread {
@@ -638,6 +685,7 @@ export interface ClaimThread {
   sender_id: string;
   sender_name: string;
   sender_role: string;
+  claim_id?: string;
   department: string;
   claim_type: string;
   status: string;
@@ -655,23 +703,42 @@ export async function submitClaimWithMessage(
   title: string,
   description: string,
   claimType: string,
-  department: string
+  directedTo: string, // 'editor' | 'content_manager' | 'admin', etc. - NOT configurable for customers
+  senderRole: string = 'customer'
 ): Promise<string> {
   try {
+    // ACCESS CONTROL: Enforce who can direct claims to whom
+    if (senderRole === 'customer' || senderRole === 'seller') {
+      // Customers/sellers can only direct to editors or content managers
+      if (!['editor', 'content_manager'].includes(directedTo)) {
+        throw new Error('Your role can only create claims directed to editors or content managers');
+      }
+    }
+    // Editors and content managers can direct to any role (except they can't direct to themselves meaningfully)
+    // Admins can create claims for any purpose (internal use)
+
     const claimsRef = collection(db, 'claims');
     const claimDocRef = await addDoc(claimsRef, {
       title,
       description,
       claim_type: claimType,
-      department,
+      department: directedTo, // Renamed from 'department' to be clearer - this is who it's directed to
+      directed_to: directedTo, // Explicit field for clarity
       sender_id: userId,
       sender_name: userName,
-      sender_role: 'customer',
+      sender_role: senderRole,
       status: 'open',
       created_at: Timestamp.now(),
       updated_at: Timestamp.now(),
       last_message: description,
       last_message_at: Timestamp.now(),
+      claim_id: '', // Will be updated after doc is created
+    });
+
+    // Set the claim_id to a human-readable format: CLAIM-{first-6-chars-of-docid}
+    const readableClaimId = `CLAIM-${claimDocRef.id.substring(0, 6).toUpperCase()}`;
+    await updateDoc(claimDocRef, {
+      claim_id: readableClaimId,
     });
 
     // Create initial message in subcollection
@@ -679,10 +746,12 @@ export async function submitClaimWithMessage(
     await addDoc(messagesRef, {
       sender_id: userId,
       sender_name: userName,
-      sender_role: 'customer',
+      sender_role: senderRole,
       message: description,
       created_at: Timestamp.now(),
       read: false,
+      edited: false,
+      forwarded_from: null,
     });
 
     return claimDocRef.id;
@@ -738,7 +807,7 @@ export async function fetchCustomerClaims(userId: string, userRole?: string, use
         id: doc.id,
         ...doc.data(),
       }))
-      .filter((claim: any) => {
+      .filter((claim: ClaimThread & { department?: string }) => {
         // Admins can see all claims
         if (userRole === 'admin') {
           return true;
@@ -764,7 +833,7 @@ export async function fetchCustomerClaims(userId: string, userRole?: string, use
 
         return false;
       })
-      .sort((a: any, b: any) => {
+      .sort((a: ClaimThread & { department?: string }, b: ClaimThread & { department?: string }) => {
         const timeA = a.updated_at?.toMillis?.() || 0;
         const timeB = b.updated_at?.toMillis?.() || 0;
         return timeB - timeA;
@@ -812,6 +881,168 @@ export async function markClaimMessagesAsRead(claimId: string): Promise<void> {
   } catch (error) {
     console.error('Error marking claim messages as read:', error);
     throw error;
+  }
+}
+
+// Edit a claim message
+export async function editClaimMessage(
+  claimId: string,
+  messageId: string,
+  newMessage: string
+): Promise<void> {
+  try {
+    const claimRef = doc(db, 'claims', claimId);
+    const messageRef = doc(collection(claimRef, 'messages'), messageId);
+    await updateDoc(messageRef, {
+      message: newMessage,
+      edited: true,
+      edited_at: Timestamp.now(),
+    });
+
+    // Update claim's updated_at timestamp
+    await updateDoc(claimRef, {
+      updated_at: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error('Error editing claim message:', error);
+    throw error;
+  }
+}
+
+// Delete a single claim message (soft delete - move to trash)
+export async function deleteClaimMessage(
+  claimId: string,
+  messageId: string,
+  userId: string,
+  userRole: string
+): Promise<void> {
+  try {
+    const claimRef = doc(db, 'claims', claimId);
+    const messageRef = doc(collection(claimRef, 'messages'), messageId);
+    
+    // Get the message to check ownership
+    const messageDoc = await getDoc(messageRef);
+    const messageData = messageDoc.data();
+
+    // Only message sender or admins can delete
+    if (messageData?.sender_id !== userId && userRole !== 'admin') {
+      throw new Error('You can only delete your own messages');
+    }
+
+    // For non-admins: just mark as deleted
+    // For admins: move to trash instead
+    if (userRole === 'admin') {
+      // Move to trash
+      const trashRef = collection(db, 'trash_bin');
+      await addDoc(trashRef, {
+        type: 'claim_message',
+        claim_id: claimId,
+        message_id: messageId,
+        original_data: messageData,
+        deleted_by: userId,
+        deleted_at: Timestamp.now(),
+        expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000), // 90 days
+      });
+    }
+
+    // Mark as deleted
+    await updateDoc(messageRef, {
+      deleted: true,
+      deleted_at: Timestamp.now(),
+    });
+  } catch (error) {
+    console.error('Error deleting claim message:', error);
+    throw error;
+  }
+}
+
+// Forward a claim message to another role/user
+export async function forwardClaimMessage(
+  claimId: string,
+  originalClaim: Record<string, unknown> & ClaimThread,
+  userId: string,
+  userName: string,
+  userRole: string,
+  forwardToRole: string // 'editor' | 'content_manager' | 'admin', etc.
+): Promise<string> {
+  try {
+    // Create a new claim that references the original
+    const claimsRef = collection(db, 'claims');
+    const forwardedClaimRef = await addDoc(claimsRef, {
+      title: `[FORWARDED] ${originalClaim.title}`,
+      description: `Forwarded from: ${originalClaim.sender_name} (${originalClaim.sender_role})\n\nOriginal claim: ${originalClaim.claim_id}\n\n${originalClaim.description}`,
+      claim_type: originalClaim.claim_type,
+      directed_to: forwardToRole,
+      department: forwardToRole,
+      forwarded_from_claim_id: claimId,
+      forwarded_by_id: userId,
+      forwarded_by_name: userName,
+      forwarded_by_role: userRole,
+      sender_id: userId,
+      sender_name: userName,
+      sender_role: userRole,
+      status: 'open',
+      created_at: Timestamp.now(),
+      updated_at: Timestamp.now(),
+      last_message: `Forwarded by ${userName}`,
+      last_message_at: Timestamp.now(),
+      claim_id: '',
+    });
+
+    // Set readable claim ID
+    const readableClaimId = `CLAIM-${forwardedClaimRef.id.substring(0, 6).toUpperCase()}`;
+    await updateDoc(forwardedClaimRef, {
+      claim_id: readableClaimId,
+    });
+
+    // Create initial forwarding message
+    const messagesRef = collection(forwardedClaimRef, 'messages');
+    await addDoc(messagesRef, {
+      sender_id: userId,
+      sender_name: userName,
+      sender_role: userRole,
+      message: `This claim has been forwarded from ${originalClaim.sender_name} (${originalClaim.sender_role}).\n\nOriginal claim ID: ${originalClaim.claim_id}`,
+      created_at: Timestamp.now(),
+      read: false,
+      forwarded_from: claimId,
+    });
+
+    return forwardedClaimRef.id;
+  } catch (error) {
+    console.error('Error forwarding claim message:', error);
+    throw error;
+  }
+}
+// Search claims by ID
+export async function searchClaimById(claimId: string, userRole?: string, userId?: string): Promise<(Record<string, unknown> & Partial<ClaimThread>) | null> {
+  try {
+    const claimsRef = collection(db, 'claims');
+    // Search by both readable claim_id and document ID
+    const q = query(claimsRef);
+    const snapshot = await getDocs(q);
+    
+    const results = snapshot.docs
+      .map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+      }))
+      .filter((claim: Record<string, unknown>) => {
+        // Match readable claim ID or document ID
+        const matches = claim.claim_id === claimId || claim.id === claimId;
+        if (!matches) return false;
+
+        // Apply visibility rules
+        if (userRole === 'admin') return true;
+        if (claim.sender_id === userId) return true;
+        if (claim.directed_to === userRole) return true;
+        
+        return false;
+      });
+
+    return results.length > 0 ? results[0] : null;
+  } catch (error) {
+    console.error('Error searching claim by ID:', error);
+    return null;
   }
 }
 
@@ -1004,6 +1235,52 @@ export async function deleteNotification(notificationId: string): Promise<void> 
     await deleteDoc(doc(db, 'notifications', notificationId));
   } catch (error) {
     console.error('Error deleting notification:', error);
+    throw error;
+  }
+}
+
+// Get full user profile by user ID
+export async function getUserProfileFull(userId: string): Promise<any> {
+  try {
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    if (!userDoc.exists()) {
+      return null;
+    }
+    return {
+      id: userId,
+      ...userDoc.data(),
+    };
+  } catch (error) {
+    console.error('Error fetching user profile:', error);
+    throw error;
+  }
+}
+
+// Forward a chat message to another user
+export async function forwardChatMessage(
+  originalMessageId: string,
+  senderId: string,
+  senderName: string,
+  recipientId: string,
+  recipientName: string,
+  message: string
+): Promise<string> {
+  try {
+    // Create a forwarded message
+    const docRef = await addDoc(collection(db, 'chat_messages'), {
+      sender_id: senderId,
+      sender_name: senderName,
+      recipient_id: recipientId,
+      recipient_name: recipientName,
+      message: `[FORWARDED]\n${message}`,
+      created_at: Timestamp.now(),
+      read: false,
+      forwarded_from_message_id: originalMessageId,
+    });
+
+    return docRef.id;
+  } catch (error) {
+    console.error('Error forwarding chat message:', error);
     throw error;
   }
 }

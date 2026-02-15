@@ -7,36 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import UserProfileModal from '@/components/UserProfileModal';
 import * as Customer from '@/lib/customer';
-import { Send, Plus, MessageSquare, Clock } from 'lucide-react';
+import { ClaimThread, ClaimMessage } from '@/lib/customer';
+import { Send, Plus, MessageSquare, Clock, Edit2, Trash2, Share2 } from 'lucide-react';
 import { toast } from 'sonner';
-
-interface ClaimThread {
-  id: string;
-  title: string;
-  description: string;
-  sender_id: string;
-  sender_name: string;
-  department: string;
-  claim_type: string;
-  status: string;
-  created_at: Timestamp;
-  updated_at: Timestamp;
-  last_message?: string;
-  last_message_at?: Timestamp;
-  unread_count?: number;
-}
-
-interface ClaimMessage {
-  id: string;
-  claim_id: string;
-  sender_id: string;
-  sender_name: string;
-  sender_role: string;
-  message: string;
-  created_at: Timestamp;
-  read: boolean;
-}
 
 export default function ClaimsMessenger() {
   const { user, profile } = useAuth();
@@ -54,7 +29,25 @@ export default function ClaimsMessenger() {
     department: 'admin',
   });
   const [submittingClaim, setSubmittingClaim] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<ClaimThread[]>([]);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingMessageText, setEditingMessageText] = useState('');
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [selectedProfileUserId, setSelectedProfileUserId] = useState<string | null>(null);
+  const [selectedProfileUserName, setSelectedProfileUserName] = useState<string | null>(null);
+  const [selectedProfileUserRole, setSelectedProfileUserRole] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Get allowed directing roles based on user role
+  const getAllowedDirectToRoles = () => {
+    if (profile?.role === 'customer' || profile?.role === 'seller') {
+      // Customers and sellers can only direct to editors and content managers
+      return ['editor', 'content_manager'];
+    }
+    // Editors, content managers, and admins can direct to any role
+    return ['admin', 'editor', 'content_manager', 'seller', 'customer'];
+  };
 
   // Load all claims
   useEffect(() => {
@@ -63,8 +56,7 @@ export default function ClaimsMessenger() {
         setLoading(true);
         const userClaims = await Customer.fetchCustomerClaims(
           user!.uid,
-          profile?.role,
-          profile?.department
+          profile?.role
         );
         setClaims(userClaims);
       } catch (error) {
@@ -75,7 +67,7 @@ export default function ClaimsMessenger() {
       }
     };
     if (user?.uid) loadClaims();
-  }, [user, profile?.role, profile?.department]);
+  }, [user, profile?.role]);
 
   // Load messages for selected claim
   useEffect(() => {
@@ -145,14 +137,14 @@ export default function ClaimsMessenger() {
         newClaimData.title,
         newClaimData.description,
         newClaimData.claimType,
-        newClaimData.department
+        newClaimData.department,
+        profile?.role || 'customer'
       );
 
       // Reload claims with role-based filtering
       const userClaims = await Customer.fetchCustomerClaims(
         user!.uid,
-        profile?.role,
-        profile?.department
+        profile?.role
       );
       setClaims(userClaims);
 
@@ -161,21 +153,113 @@ export default function ClaimsMessenger() {
         title: '',
         description: '',
         claimType: 'complaint',
-        department: 'admin',
+        department: profile?.role === 'customer' || profile?.role === 'seller' ? 'editor' : 'admin',
       });
       setShowNewForm(false);
       toast.success('Claim submitted successfully');
     } catch (error) {
       console.error('Error submitting claim:', error);
-      toast.error('Failed to submit claim');
+      const errorMsg = error instanceof Error ? error.message : 'Failed to submit claim';
+      toast.error(errorMsg);
     } finally {
       setSubmittingClaim(false);
     }
   };
 
+  // Search claims by ID
+  const handleSearchClaim = async () => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+
+    try {
+      const result = await Customer.searchClaimById(searchQuery, profile?.role, user!.uid);
+      if (result) {
+        setSearchResults([result as ClaimThread]);
+      } else {
+        toast.error('Claim not found');
+        setSearchResults([]);
+      }
+    } catch (error) {
+      console.error('Error searching claim:', error);
+      toast.error('Failed to search claim');
+    }
+  };
+
+  // Edit message
+  const handleEditMessage = async (messageId: string, claimId: string) => {
+    if (!editingMessageText.trim()) {
+      toast.error('Message cannot be empty');
+      return;
+    }
+
+    try {
+      await Customer.editClaimMessage(claimId, messageId, editingMessageText);
+      const claimMessages = await Customer.fetchClaimMessages(claimId);
+      setMessages(claimMessages);
+      setEditingMessageId(null);
+      setEditingMessageText('');
+      toast.success('Message edited');
+    } catch (error) {
+      console.error('Error editing message:', error);
+      toast.error('Failed to edit message');
+    }
+  };
+
+  // Delete message
+  const handleDeleteMessage = async (messageId: string, claimId: string) => {
+    if (!confirm('Delete this message?')) return;
+
+    try {
+      await Customer.deleteClaimMessage(claimId, messageId, user!.uid, profile?.role || 'customer');
+      const claimMessages = await Customer.fetchClaimMessages(claimId);
+      setMessages(claimMessages);
+      toast.success('Message deleted');
+    } catch (error) {
+      console.error('Error deleting message:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to delete message');
+    }
+  };
+
+  // Forward claim to another role
+  const handleForwardClaim = async (toRole: string) => {
+    if (!selectedClaim) return;
+
+    try {
+      await Customer.forwardClaimMessage(
+        selectedClaim.id,
+        selectedClaim as Record<string, unknown> & ClaimThread,
+        user!.uid,
+        profile?.full_name || user!.email || 'User',
+        profile?.role || 'customer',
+        toRole
+      );
+      toast.success(`Claim forwarded to ${toRole}`);
+      
+      // Reload claims
+      const userClaims = await Customer.fetchCustomerClaims(
+        user!.uid,
+        profile?.role
+      );
+      setClaims(userClaims);
+    } catch (error) {
+      console.error('Error forwarding claim:', error);
+      toast.error('Failed to forward claim');
+    }
+  };
+
+  // Open user profile modal
+  const handleViewProfile = (userId: string, userName: string, userRole?: string) => {
+    setSelectedProfileUserId(userId);
+    setSelectedProfileUserName(userName);
+    setSelectedProfileUserRole(userRole || '');
+    setShowProfileModal(true);
+  };
+
   const formatTime = (timestamp: Timestamp) => {
     if (!timestamp) return '';
-    const date = timestamp.toDate?.() || new Date(timestamp);
+    const date = typeof timestamp.toDate === 'function' ? timestamp.toDate() : new Date();
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
@@ -212,9 +296,9 @@ export default function ClaimsMessenger() {
 
   return (
     <Layout hideFooter={true}>
-      <div className="flex h-[calc(100vh-200px)] gap-4 p-6">
+      <div className="flex h-[calc(100vh-80px)] gap-4 p-3 md:p-6">
         {/* Claims List */}
-        <div className="w-80 border rounded-lg bg-white flex flex-col">
+        <div className="hidden md:flex md:w-80 border rounded-lg bg-white flex-col">
           <div className="p-4 border-b flex justify-between items-center">
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <MessageSquare className="h-5 w-5" />
@@ -276,9 +360,12 @@ export default function ClaimsMessenger() {
                 }
                 className="w-full border rounded px-2 py-1 text-sm"
               >
-                <option value="admin">Admin Team</option>
-                <option value="editor">Editor Team</option>
-                <option value="content_manager">Content Manager</option>
+                <option value="">Select recipient...</option>
+                {getAllowedDirectToRoles().map((role) => (
+                  <option key={role} value={role}>
+                    {role === 'admin' ? 'Admin Team' : role === 'editor' ? 'Editor Team' : role === 'content_manager' ? 'Content Manager' : role}
+                  </option>
+                ))}
               </select>
               <div className="flex gap-2">
                 <Button
@@ -301,19 +388,38 @@ export default function ClaimsMessenger() {
             </div>
           )}
 
+          {/* Search Claims */}
+          <div className="p-3 border-b space-y-2">
+            <div className="flex gap-1">
+              <Input
+                placeholder="Search by Claim ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="text-sm flex-1"
+              />
+              <Button onClick={handleSearchClaim} size="sm" variant="outline">
+                Search
+              </Button>
+            </div>
+          </div>
+
           {/* Claims List */}
           <div className="flex-1 overflow-y-auto">
             {loading ? (
               <div className="p-4 text-center text-gray-500">Loading...</div>
-            ) : claims.length === 0 ? (
+            ) : (searchResults.length > 0 ? searchResults : claims).length === 0 ? (
               <div className="p-4 text-center text-gray-500 text-sm">
-                No claims yet. Start a new claim!
+                {searchResults.length === 0 ? 'No claims found' : 'No claims yet. Start a new claim!'}
               </div>
             ) : (
-              claims.map((claim) => (
+              (searchResults.length > 0 ? searchResults : claims).map((claim) => (
                 <div
                   key={claim.id}
-                  onClick={() => setSelectedClaim(claim)}
+                  onClick={() => {
+                    setSelectedClaim(claim);
+                    setSearchResults([]);
+                    setSearchQuery('');
+                  }}
                   className={`p-3 border-b cursor-pointer transition ${
                     selectedClaim?.id === claim.id
                       ? 'bg-blue-50 border-l-4 border-blue-500'
@@ -321,9 +427,14 @@ export default function ClaimsMessenger() {
                   }`}
                 >
                   <div className="flex justify-between items-start mb-1">
-                    <h3 className="font-semibold text-sm line-clamp-1">
-                      {claim.title}
-                    </h3>
+                    <div className="flex-1">
+                      <div className="text-xs font-mono text-blue-600 mb-1">
+                        {claim.claim_id || `CLAIM-${claim.id.substring(0, 6).toUpperCase()}`}
+                      </div>
+                      <h3 className="font-semibold text-sm line-clamp-1">
+                        {claim.title}
+                      </h3>
+                    </div>
                     <Badge className={`text-xs ${getStatusColor(claim.status)}`}>
                       {claim.status}
                     </Badge>
@@ -351,10 +462,34 @@ export default function ClaimsMessenger() {
             <>
               {/* Header */}
               <div className="p-4 border-b bg-gradient-to-r from-blue-50 to-blue-100">
-                <h2 className="font-semibold text-lg mb-2">{selectedClaim.title}</h2>
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <div className="text-xs font-mono text-blue-600 mb-1">
+                      {selectedClaim.claim_id || `CLAIM-${selectedClaim.id.substring(0, 6).toUpperCase()}`}
+                    </div>
+                    <h2 className="font-semibold text-lg">{selectedClaim.title}</h2>
+                  </div>
+                  {/* Forward button for admins and authorized users */}
+                  {(profile?.role === 'admin' || profile?.role === 'editor' || profile?.role === 'content_manager') && (
+                    <div className="flex gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        title="Forward claim"
+                        onClick={() => {
+                          const toRole = prompt('Forward to role (editor, content_manager, admin):');
+                          if (toRole) handleForwardClaim(toRole);
+                        }}
+                      >
+                        <Share2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
                 <div className="space-y-2">
                   <div className="text-sm text-gray-700">
-                    <span className="font-medium">From:</span> {selectedClaim.sender_name} (Customer)
+                    <span className="font-medium">From:</span> {selectedClaim.sender_name} ({selectedClaim.sender_role})
                   </div>
                   <div className="text-sm text-gray-700">
                     <span className="font-medium">To:</span> {selectedClaim.department.charAt(0).toUpperCase() + selectedClaim.department.slice(1)} Team
@@ -376,8 +511,11 @@ export default function ClaimsMessenger() {
 
               {/* Messages */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
-                {messages.map((msg) => {
-                  const isCurrentUser = msg.sender_id === user.uid;
+                {messages.map((msg: ClaimMessage) => {
+                  const isCurrentUser = msg.sender_id === user?.uid;
+                  const canEdit = isCurrentUser || profile?.role === 'admin';
+                  const isEditing = editingMessageId === msg.id;
+
                   return (
                     <div
                       key={msg.id}
@@ -385,26 +523,97 @@ export default function ClaimsMessenger() {
                         isCurrentUser ? 'justify-end' : 'justify-start'
                       }`}
                     >
-                      <div
-                        className={`max-w-xs px-4 py-2 rounded-lg ${
-                          isCurrentUser
-                            ? 'bg-blue-500 text-white rounded-br-none'
-                            : 'bg-white text-gray-900 border rounded-bl-none'
-                        }`}
-                      >
-                        <p className="text-xs font-semibold opacity-75 mb-1">
-                          {msg.sender_name} ({msg.sender_role})
-                        </p>
-                        <p className="text-sm break-words">{msg.message}</p>
-                        <p
-                          className={`text-xs mt-1 ${
+                      <div className="max-w-sm space-y-1">
+                        {isEditing ? (
+                          <div className={`px-4 py-2 rounded-lg border-2 border-blue-400 ${
                             isCurrentUser
-                              ? 'text-blue-100'
-                              : 'text-gray-500'
-                          }`}
-                        >
-                          {formatTime(msg.created_at)}
-                        </p>
+                              ? 'bg-blue-100'
+                              : 'bg-white'
+                          }`}>
+                            <Textarea
+                              value={editingMessageText}
+                              onChange={(e) => setEditingMessageText(e.target.value)}
+                              className="text-sm"
+                              rows={2}
+                            />
+                            <div className="flex gap-2 mt-2">
+                              <Button
+                                onClick={() => handleEditMessage(msg.id, selectedClaim.id)}
+                                size="sm"
+                                className="text-xs"
+                              >
+                                Save
+                              </Button>
+                              <Button
+                                onClick={() => setEditingMessageId(null)}
+                                size="sm"
+                                variant="outline"
+                                className="text-xs"
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            className={`px-4 py-2 rounded-lg ${
+                              isCurrentUser
+                                ? 'bg-blue-500 text-white rounded-br-none'
+                                : 'bg-white text-gray-900 border rounded-bl-none'
+                            }`}
+                          >
+                            <button
+                              onClick={() => handleViewProfile(msg.sender_id, msg.sender_name, msg.sender_role)}
+                              className="text-xs font-semibold opacity-75 mb-1 hover:opacity-100 cursor-pointer underline"
+                            >
+                              {msg.sender_name} ({msg.sender_role})
+                            </button>
+                            {msg.deleted ? (
+                              <p className="text-xs italic opacity-50">Message deleted</p>
+                            ) : (
+                              <>
+                                <p className="text-sm break-words">{msg.message}</p>
+                                {msg.edited && <p className="text-xs opacity-50 italic">Edited</p>}
+                              </>
+                            )}
+                            <p
+                              className={`text-xs mt-1 ${
+                                isCurrentUser
+                                  ? 'text-blue-100'
+                                  : 'text-gray-500'
+                              }`}
+                            >
+                              {formatTime(msg.created_at)}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Message action buttons */}
+                        {!msg.deleted && !isEditing && canEdit && (
+                          <div className="flex gap-1 px-2">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setEditingMessageId(msg.id);
+                                setEditingMessageText(msg.message);
+                              }}
+                              title="Edit message"
+                              className="h-6 w-6 p-0"
+                            >
+                              <Edit2 className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleDeleteMessage(msg.id, selectedClaim.id)}
+                              title="Delete message"
+                              className="h-6 w-6 p-0 text-red-600"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -448,6 +657,17 @@ export default function ClaimsMessenger() {
           )}
         </div>
       </div>
+
+      {/* User Profile Modal */}
+      {selectedProfileUserId && (
+        <UserProfileModal
+          userId={selectedProfileUserId}
+          userName={selectedProfileUserName || ''}
+          userRole={selectedProfileUserRole || ''}
+          isOpen={showProfileModal}
+          onClose={() => setShowProfileModal(false)}
+        />
+      )}
     </Layout>
   );
 }
