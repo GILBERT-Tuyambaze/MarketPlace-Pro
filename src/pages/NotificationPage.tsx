@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import * as Customer from '@/lib/customer';
 import { Plus, Trash2, Edit2, Bell, Megaphone } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 
 interface Notification {
@@ -219,9 +220,50 @@ export default function NotificationPage() {
 
   return (
     <Layout hideFooter={true}>
-      <div className="flex h-[calc(100vh-80px)] bg-background">
+      {/* Create/Edit modal for notifications/announcements */}
+      <Dialog open={showForm} onOpenChange={(open) => setShowForm(open)}>
+        <DialogContent className="max-w-3xl w-full">
+          <DialogHeader>
+            <DialogTitle>{editingId ? 'Edit Item' : `Create ${activeTab === 'announcement' ? 'Announcement' : 'Notification'}`}</DialogTitle>
+          </DialogHeader>
+          <div className={`p-4 ${activeTab === 'announcement' ? 'bg-orange-50' : 'bg-blue-50'}`}>
+            <Input
+              placeholder="Title..."
+              value={formData.title}
+              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+              className="text-sm w-full"
+            />
+            <Textarea
+              placeholder="Content..."
+              value={formData.content}
+              onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+              rows={10}
+              className="text-sm w-full mt-3"
+            />
+            <div className="flex items-center gap-3 mt-3">
+              <input
+                type="checkbox"
+                id="pub_modal"
+                checked={formData.is_published}
+                onChange={(e) => setFormData({ ...formData, is_published: e.target.checked })}
+              />
+              <label htmlFor="pub_modal" className="text-sm">Publish now</label>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <Button onClick={handleSubmitNotification} disabled={submitting} className="flex-1">
+                Save
+              </Button>
+              <Button variant="outline" onClick={() => { setShowForm(false); setEditingId(null); setFormData({ title: '', content: '', is_published: false }); }} className="flex-1">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <div className="site-container flex flex-col md:flex-row h-[calc(100vh-80px)] bg-background">
         {/* Left Panel - Notification List */}
-        <div className="w-96 border-r bg-background flex flex-col">
+        <div className="w-full md:w-96 border-r bg-background flex flex-col">
           {/* Header */}
           <div className="p-4 border-b space-y-3">
             <div className="flex items-center justify-between">
@@ -319,7 +361,7 @@ export default function NotificationPage() {
         </div>
 
         {/* Right Panel - Email Detail View */}
-        <div className="flex-1 flex flex-col bg-background">
+        <div className="flex-1 flex flex-col bg-background min-h-0">
           {selectedNotification ? (
             <>
               {/* Email Header */}

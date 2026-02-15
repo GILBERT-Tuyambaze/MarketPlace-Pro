@@ -296,9 +296,9 @@ export default function ClaimsMessenger() {
 
   return (
     <Layout hideFooter={true}>
-      <div className="flex h-[calc(100vh-80px)] gap-4 p-3 md:p-6">
+      <div className="site-container flex flex-col md:flex-row h-[calc(100vh-80px)] gap-4 p-3 md:p-6">
         {/* Claims List */}
-        <div className="hidden md:flex md:w-80 border rounded-lg bg-white flex-col">
+        <div className="hidden md:flex md:w-80 w-full border rounded-lg bg-white flex-col">
           <div className="p-4 border-b flex justify-between items-center">
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <MessageSquare className="h-5 w-5" />
@@ -457,7 +457,7 @@ export default function ClaimsMessenger() {
         </div>
 
         {/* Messages Area */}
-        <div className="flex-1 border rounded-lg bg-white flex flex-col">
+        <div className="flex-1 border rounded-lg bg-white flex flex-col min-h-0">
           {selectedClaim ? (
             <>
               {/* Header */}
@@ -510,7 +510,7 @@ export default function ClaimsMessenger() {
               </div>
 
               {/* Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+              <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 min-h-0">
                 {messages.map((msg: ClaimMessage) => {
                   const isCurrentUser = msg.sender_id === user?.uid;
                   const canEdit = isCurrentUser || profile?.role === 'admin';

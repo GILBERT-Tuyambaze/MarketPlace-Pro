@@ -292,9 +292,9 @@ const ChatPage: React.FC = () => {
 
   return (
     <Layout hideFooter={true}>
-      <div className="h-[calc(100vh-80px)] flex bg-white">
+      <div className="site-container h-[calc(100vh-80px)] flex flex-col md:flex-row bg-white">
         {/* Left Sidebar - Chat List */}
-        <div className="hidden md:flex w-80 border-r border-gray-200 flex-col bg-white">
+        <div className="hidden md:flex md:w-80 w-full border-r border-gray-200 flex-col bg-white">
           {/* Header */}
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center justify-between mb-4">
@@ -376,7 +376,7 @@ const ChatPage: React.FC = () => {
             <Button onClick={() => setShowUserSearch(true)}>Start New Chat</Button>
           </div>
         ) : (
-          <div className="flex-1 flex flex-col bg-gray-50">
+          <div className="flex-1 flex flex-col bg-gray-50 min-h-0">
             {/* Chat Header */}
             <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between">
               <div>
@@ -392,7 +392,7 @@ const ChatPage: React.FC = () => {
             </div>
 
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
               {loading ? (
                 <div className="flex items-center justify-center h-full">
                   <p className="text-gray-500">Loading messages...</p>

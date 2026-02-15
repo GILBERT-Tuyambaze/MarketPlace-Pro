@@ -1056,7 +1056,7 @@ const SellerDashboard: React.FC = () => {
   if (profile?.seller_status !== 'approved') {
     return (
       <Layout>
-        <div className="container mx-auto px-6 py-8">
+        <div className="site-container py-8">
           <Card className="max-w-md mx-auto">
             <CardContent className="text-center py-8">
               <Package className="h-12 w-12 text-yellow-600 mx-auto mb-4" />
@@ -1079,7 +1079,7 @@ const SellerDashboard: React.FC = () => {
           <p className="text-gray-600">Manage orders and communicate with marketplace team</p>
         </div>
 
-        <div className="mb-6 flex gap-3">
+        <div className="mb-6 flex flex-wrap gap-3">
           <Link to="/seller/analytics"><Button>View Analytics</Button></Link>
           <Link to="/add-product"><Button variant="ghost">Add Product</Button></Link>
           <Link to="/seller/dashboard"><Button variant="outline">Refresh</Button></Link>
@@ -1116,7 +1116,7 @@ const SellerDashboard: React.FC = () => {
 
         {/* Tabs */}
         <Tabs defaultValue="orders">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4">
             <TabsTrigger value="orders">Orders</TabsTrigger>
             <TabsTrigger value="products">Products</TabsTrigger>
             <TabsTrigger value="messaging">Messaging</TabsTrigger>
